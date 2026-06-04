@@ -143,6 +143,9 @@ Pruebas automatizadas de esta iteración: **6/6**.
   búsqueda y el filtro); en una etapa, esa etapa; en «Todos los registros», la
   bitácora filtrada; y en el Resumen, todo. El botón cambia su texto según la
   vista. La exportación completa sigue disponible (Resumen y Configuración).
+  Al exportar el inventario o un estado, el libro incluye además una segunda
+  hoja **«Registros»** con todos los registros (mantenciones, solicitudes…) de
+  los equipos visibles.
 - **Ficha del equipo (modal)** ampliada (máx. 1000 → 1600 px) para aprovechar la
   pantalla.
 

@@ -1026,14 +1026,20 @@
       return rows;
     }
 
-    // Exporta exactamente los equipos visibles (estado + búsqueda actuales).
+    // Exporta los equipos visibles (estado + búsqueda actuales) y, en una segunda
+    // hoja, TODOS sus registros (mantenciones, solicitudes, etc.).
     function exportarVista() {
       var rows = filtrarRows();
       if (!rows.length) { toast('No hay equipos que exportar en esta vista.', 'err'); return; }
       var titulo = estadoForzado ? ('Inventario ' + estadoForzado) : (selEstado.value ? ('Inventario ' + selEstado.value) : 'Inventario');
+      var invSet = {};
+      rows.forEach(function (x) { if (x.e.inventario) invSet[x.e.inventario] = 1; });
+      var regRows = bitacoraRows().filter(function (b) { return b.r.equipo && b.r.equipo.inv && invSet[b.r.equipo.inv]; });
+      var hojas = [hojaInventarioDesde(rows, titulo.slice(0, 31))];
+      if (regRows.length) hojas.push(hojaBitacoraDesde(regRows, 'Registros'));
       try {
-        XLSXWriter.descargar(nombreArchivo(titulo), [hojaInventarioDesde(rows, titulo.slice(0, 31))]);
-        toast(rows.length + ' equipo(s) exportados.', 'ok');
+        XLSXWriter.descargar(nombreArchivo(titulo), hojas);
+        toast(rows.length + ' equipo(s) y ' + regRows.length + ' registro(s) exportados.', 'ok');
       } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
     }
     btnExp.onclick = exportarVista;
