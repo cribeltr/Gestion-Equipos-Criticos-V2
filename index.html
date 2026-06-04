@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestión de Equipos en Servicio Técnico</title>
+  <meta name="description" content="Registro por etapas del proceso de gestión de equipos en servicio técnico, con persistencia local y exportación a Excel." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <h1>🩺 Gestión de Equipos</h1>
+        <span>Servicio Técnico · Equipos Críticos</span>
+      </div>
+      <nav class="nav" id="nav"></nav>
+    </aside>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <div class="main">
+      <div class="topbar">
+        <button class="btn btn-ghost menu-toggle" id="menuToggle" title="Menú">☰</button>
+        <div>
+          <h2 id="viewTitle">Resumen</h2>
+          <div class="sub" id="viewSub"></div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-success" id="btnExport" title="Exportar todos los registros a Excel">⬇️ Exportar a Excel</button>
+      </div>
+      <div class="content" id="content"></div>
+    </div>
+  </div>
+
+  <datalist id="dl-empresas"></datalist>
+  <datalist id="dl-folios"></datalist>
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script src="equipos.js"></script>
+  <script src="vendor-xlsx.js"></script>
+  <script src="eventos_mp.js"></script>
+  <script src="xlsx.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
