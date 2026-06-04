@@ -8,6 +8,11 @@ hasta el cierre del ciclo—, con **persistencia local** en el navegador y
 No requiere servidor, instalación ni conexión a internet: basta con abrir
 `index.html` en cualquier navegador moderno.
 
+> **Revisión técnica (junio 2026).** El código fue verificado y mejorado en
+> programación, UX/UI (accesibilidad por teclado y lectores de pantalla) y
+> gestión (KPI de antigüedad/SLA e impresión de reportes). El detalle completo
+> está en [`VERIFICACION.md`](VERIFICACION.md).
+
 ## Cómo usar
 
 1. Abra **`index.html`** (doble clic, o arrástrelo a una pestaña del navegador).

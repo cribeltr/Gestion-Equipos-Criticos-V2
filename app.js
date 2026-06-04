@@ -338,48 +338,94 @@
   }
 
   // ------------------------------------------------------------- Selector eq.
+  // Combobox accesible: búsqueda con teclado (flechas + Enter + Esc) y ARIA.
   function buildEquipoPicker(inicial, onChange) {
     var wrap = el('div', { class: 'equipo-pick' });
-    var input = el('input', { type: 'text', autocomplete: 'off', placeholder: 'Buscar por inventario, equipo, serie, marca, servicio…' });
-    var results = el('div', { class: 'equipo-results' });
+    var listId = 'eqlist-' + uid();
+    var input = el('input', {
+      type: 'text', autocomplete: 'off', placeholder: 'Buscar por inventario, equipo, serie, marca, servicio…',
+      role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list', 'aria-controls': listId, 'aria-label': 'Buscar equipo en el listado crítico'
+    });
+    var results = el('div', { class: 'equipo-results', id: listId, role: 'listbox' });
     var chip = el('div', { class: 'equipo-chip' });
     var selected = inicial || null;
+    var items = [], matches = [], hl = -1;
+
+    function onDocClick(e) { if (!wrap.contains(e.target)) cerrar(); }
+    function cerrar() {
+      results.classList.remove('show');
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+      document.removeEventListener('click', onDocClick, true);
+      hl = -1;
+    }
+    function abrir() {
+      results.classList.add('show');
+      input.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', onDocClick, true);
+    }
+    function setHl(i) {
+      if (!items.length) return;
+      if (i < 0) i = items.length - 1; else if (i >= items.length) i = 0;
+      if (hl >= 0 && items[hl]) { items[hl].classList.remove('hl'); items[hl].setAttribute('aria-selected', 'false'); }
+      hl = i;
+      items[hl].classList.add('hl');
+      items[hl].setAttribute('aria-selected', 'true');
+      input.setAttribute('aria-activedescendant', items[hl].id);
+      items[hl].scrollIntoView({ block: 'nearest' });
+    }
+    function elegir(m) {
+      selected = { inv: m.inventario, nombre: m.equipo, servicio: m.servicio, serie: m.serie, marca: m.marca, modelo: m.modelo, unidad: m.unidad, ubicacion: m.ubicacion };
+      input.value = ''; cerrar(); pintarChip();
+      if (onChange) onChange(selected);
+    }
 
     function pintarChip() {
       if (selected) {
-        chip.innerHTML = '<span class="x" title="Quitar">✕</span><strong>' + esc(selected.inv || '(sin inventario)') + '</strong> — ' +
+        chip.innerHTML = '<span class="x" title="Quitar" role="button" tabindex="0" aria-label="Quitar equipo seleccionado">✕</span><strong>' + esc(selected.inv || '(sin inventario)') + '</strong> — ' +
           esc(selected.nombre || '') + ' <span style="color:#6b7780">· ' + esc(selected.servicio || '') +
           (selected.serie ? (' · Serie ' + esc(selected.serie)) : '') +
           (selected.ubicacion ? (' · ' + esc(selected.ubicacion)) : '') + '</span>';
         chip.classList.add('show');
         input.style.display = 'none';
-        chip.querySelector('.x').onclick = function () { selected = null; pintarChip(); if (onChange) onChange(selected); };
+        var quitar = function () { selected = null; pintarChip(); input.focus(); if (onChange) onChange(selected); };
+        var x = chip.querySelector('.x');
+        x.onclick = quitar;
+        x.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); quitar(); } };
       } else {
         chip.classList.remove('show');
         input.style.display = '';
       }
     }
-    input.addEventListener('input', function () {
+    function buscar() {
       var q = input.value.trim();
-      results.innerHTML = '';
-      if (!q) { results.classList.remove('show'); return; }
-      var ms = buscarEquipos(q, 40);
-      if (!ms.length) { results.innerHTML = '<div class="empty">Sin coincidencias en el listado crítico</div>'; results.classList.add('show'); return; }
-      ms.forEach(function (m) {
-        var it = el('div', { class: 'item' });
+      results.innerHTML = ''; items = []; matches = []; hl = -1;
+      if (!q) { cerrar(); return; }
+      matches = buscarEquipos(q, 40);
+      if (!matches.length) {
+        results.innerHTML = '<div class="empty">Sin coincidencias en el listado crítico</div>';
+        abrir(); return;
+      }
+      matches.forEach(function (m, i) {
+        var it = el('div', { class: 'item', id: listId + '-o' + i, role: 'option', 'aria-selected': 'false' });
         it.innerHTML = '<div class="t">' + esc(m.inventario || '(sin inventario)') + ' — ' + esc(m.equipo) + '</div>' +
           '<div class="m">' + esc(m.servicio || '') + ' · ' + esc([m.marca, m.modelo].filter(Boolean).join(' ')) +
           (m.serie ? (' · Serie ' + esc(m.serie)) : '') + (m.ubicacion ? (' · ' + esc(m.ubicacion)) : '') + '</div>';
-        it.onclick = function () {
-          selected = { inv: m.inventario, nombre: m.equipo, servicio: m.servicio, serie: m.serie, marca: m.marca, modelo: m.modelo, unidad: m.unidad, ubicacion: m.ubicacion };
-          input.value = ''; results.classList.remove('show'); pintarChip();
-          if (onChange) onChange(selected);
-        };
-        results.appendChild(it);
+        it.onclick = function () { elegir(m); };
+        it.addEventListener('mousemove', function () { setHl(i); });
+        results.appendChild(it); items.push(it);
       });
-      results.classList.add('show');
+      abrir();
+    }
+
+    input.addEventListener('input', buscar);
+    input.addEventListener('keydown', function (e) {
+      if (!results.classList.contains('show')) { if (e.key === 'ArrowDown') buscar(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHl(hl + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setHl(hl - 1); }
+      else if (e.key === 'Enter') { if (hl >= 0 && matches[hl]) { e.preventDefault(); elegir(matches[hl]); } }
+      else if (e.key === 'Escape') { cerrar(); }
     });
-    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) results.classList.remove('show'); });
 
     wrap.appendChild(input); wrap.appendChild(results); wrap.appendChild(chip);
     pintarChip();
@@ -542,6 +588,7 @@
     render();
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('backdrop').classList.remove('show');
+    var mt = document.getElementById('menuToggle'); if (mt) mt.setAttribute('aria-expanded', 'false');
     window.scrollTo(0, 0);
   }
 
@@ -576,12 +623,18 @@
           badge = conteoEtapaAbierta(id, cerrados); // solo trabajo abierto (excluye ciclos cerrados)
           badgeTitle = 'Pendientes — excluye los ciclos ya cerrados';
         }
-        var a = el('a', { class: STATE.view === id ? 'active' : '' }, [
-          el('span', { class: 'ico' }, icono),
+        var activo = STATE.view === id;
+        var a = el('a', {
+          class: activo ? 'active' : '', role: 'link', tabindex: '0',
+          'aria-current': activo ? 'page' : null,
+          'aria-label': (badge != null && badge > 0 && badgeTitle) ? (label + ' (' + badge + ' ' + badgeTitle.toLowerCase() + ')') : label
+        }, [
+          el('span', { class: 'ico', 'aria-hidden': 'true' }, icono),
           el('span', {}, label),
           (badge != null && badge > 0) ? el('span', { class: 'badge', title: badgeTitle }, String(badge)) : null
         ]);
         a.onclick = function () { navegar(id); };
+        a.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); navegar(id); } };
         nav.appendChild(a);
       });
     });
@@ -608,6 +661,31 @@
     return n;
   }
 
+  // ---------------------------------------------------- Antigüedad / SLA
+  function diasDesde(iso) {
+    if (!iso) return null;
+    var d = new Date(String(iso).slice(0, 10) + 'T00:00:00'); if (isNaN(d)) return null;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+  function agePill(dias) {
+    var cls = dias <= 15 ? 'age-ok' : (dias <= 45 ? 'age-warn' : 'age-bad');
+    return el('span', { class: 'age-pill ' + cls, title: 'Días desde la apertura' }, dias + (dias === 1 ? ' día' : ' días'));
+  }
+  // Solicitudes vigentes (folios no cerrados) con su antigüedad, por la fecha más antigua del folio.
+  function solicitudesVigentesAntiguedad() {
+    var cerrados = foliosCerrados(), first = {};
+    ETAPAS.forEach(function (et) {
+      DB.registros[et.id].forEach(function (r) {
+        if (!r.folio || cerrados[r.folio]) return;
+        var f = r.fecha || (r._createdAt ? r._createdAt.slice(0, 10) : '');
+        if (!f) return;
+        if (!first[r.folio] || f < first[r.folio].fecha) first[r.folio] = { folio: r.folio, fecha: f, equipo: r.equipo };
+      });
+    });
+    return Object.keys(first).map(function (k) { var o = first[k]; o.dias = diasDesde(o.fecha) || 0; return o; })
+      .sort(function (a, b) { return b.dias - a.dias; });
+  }
+
   // ------------------------------------------------------------- Dashboard
   function renderDashboard() {
     setTitulo('Resumen del proceso', 'Gestión de equipos en servicio técnico · versión 2.0');
@@ -619,6 +697,9 @@
     ETAPAS.forEach(function (e) { DB.registros[e.id].forEach(function (r) { if (r.equipo && r.equipo.inv) equiposSet[r.equipo.inv] = 1; }); });
     var vigentes = folios.filter(function (f) { return !cerrados[f]; }).length;
 
+    var antiguedad = solicitudesVigentesAntiguedad();
+    var maxDias = antiguedad.length ? antiguedad[0].dias : 0;
+
     var stats = el('div', { class: 'stat-grid' });
     function stat(n, l, accent) { return el('div', { class: 'stat' + (accent ? ' accent' : '') }, [el('div', { class: 'n' }, String(n)), el('div', { class: 'l' }, l)]); }
     stats.appendChild(stat(totalRegistros(), 'Registros totales'));
@@ -626,12 +707,39 @@
     stats.appendChild(stat(vigentes, 'Solicitudes vigentes'));
     stats.appendChild(stat(Object.keys(cerrados).length, 'Ciclos cerrados', true));
     stats.appendChild(stat(Object.keys(equiposSet).length, 'Equipos intervenidos'));
+    stats.appendChild(stat(maxDias, 'Antigüedad máx. (días)'));
     contentEl.appendChild(stats);
 
     var banner = el('div', { class: 'banner' },
       'Cada etapa se registra de forma independiente: puede crear cualquier registro sin necesidad de completar las etapas previas. ' +
       'El folio de la solicitud se ingresa manualmente y, en el resto de las etapas, puede reutilizarlo desde la lista.');
     contentEl.appendChild(banner);
+
+    // Seguimiento de SLA: solicitudes vigentes ordenadas por antigüedad.
+    if (antiguedad.length) {
+      var cardSLA = el('div', { class: 'card' });
+      cardSLA.appendChild(el('div', { class: 'card-head' }, [
+        el('h3', {}, '⏱️ Solicitudes vigentes más antiguas'),
+        el('span', { class: 'desc' }, 'Verde ≤ 15 días · ámbar ≤ 45 · rojo > 45')
+      ]));
+      var bodySLA = el('div', { class: 'card-body' });
+      var wrapSLA = el('div', { class: 'tabla-wrap' });
+      var tSLA = el('table', { class: 'data' });
+      tSLA.appendChild(el('thead', {}, el('tr', {}, [th('Folio'), th('Equipo'), th('Apertura'), th('Antigüedad')])));
+      var tbSLA = el('tbody');
+      antiguedad.slice(0, 8).forEach(function (o) {
+        var tr = el('tr', { class: 'row-click' });
+        tr.appendChild(td(o.folio || '—'));
+        tr.appendChild(td(equipoCorto(o.equipo) || '—'));
+        tr.appendChild(td(fmtFecha(o.fecha) || '—'));
+        tr.appendChild(td(agePill(o.dias)));
+        tr.onclick = function () { navegar('__todos'); };
+        tbSLA.appendChild(tr);
+      });
+      tSLA.appendChild(tbSLA); wrapSLA.appendChild(tSLA); bodySLA.appendChild(wrapSLA);
+      cardSLA.appendChild(bodySLA);
+      contentEl.appendChild(cardSLA);
+    }
 
     var card = el('div', { class: 'card' });
     card.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, 'Etapas del proceso'), el('span', { class: 'desc' }, 'Haga clic en una etapa para registrar.')]));
@@ -996,27 +1104,44 @@
   }
 
   // ------------------------------------------------------------------- Modal
-  var _modalOnClose = null;
+  var _modalOnClose = null, _modalPrevFocus = null;
   function openModal(titulo, bodyNode, onClose) {
     closeModal();
     _modalOnClose = onClose || null;
+    _modalPrevFocus = document.activeElement; // para devolver el foco al cerrar
+    var titleId = 'modal-title-' + uid();
     var bd = el('div', { class: 'modal-backdrop', id: 'modal-bd' });
-    var m = el('div', { class: 'modal' });
-    var btnX = el('button', { class: 'close', title: 'Cerrar' }, '✕');
+    var m = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId });
+    var btnX = el('button', { class: 'close', title: 'Cerrar', 'aria-label': 'Cerrar' }, '✕');
     btnX.onclick = closeModal;
-    m.appendChild(el('div', { class: 'modal-head' }, [el('h3', {}, titulo), btnX]));
+    m.appendChild(el('div', { class: 'modal-head' }, [el('h3', { id: titleId }, titulo), btnX]));
     m.appendChild(el('div', { class: 'modal-body' }, [bodyNode]));
     bd.appendChild(m);
     bd.addEventListener('click', function (ev) { if (ev.target === bd) closeModal(); });
     document.body.appendChild(bd);
     document.addEventListener('keydown', escClose);
+    // Foco inicial dentro del diálogo (primer control o el botón cerrar).
+    var primero = m.querySelector('input,select,textarea,button,[tabindex]') || btnX;
+    if (primero && primero.focus) primero.focus();
   }
-  function escClose(ev) { if (ev.key === 'Escape') closeModal(); }
+  // Cierra con Escape y mantiene el foco dentro del diálogo (Tab/Shift+Tab).
+  function escClose(ev) {
+    if (ev.key === 'Escape') { closeModal(); return; }
+    if (ev.key !== 'Tab') return;
+    var m = document.querySelector('#modal-bd .modal'); if (!m) return;
+    var foc = m.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+    if (!foc.length) return;
+    var first = foc[0], last = foc[foc.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  }
   function closeModal() {
     var x = document.getElementById('modal-bd');
     if (x && x.parentNode) x.parentNode.removeChild(x);
     document.removeEventListener('keydown', escClose);
     var cb = _modalOnClose; _modalOnClose = null;
+    var pf = _modalPrevFocus; _modalPrevFocus = null;
+    if (pf && pf.focus) { try { pf.focus(); } catch (e) {} }
     if (cb) cb();
   }
 
@@ -1213,7 +1338,7 @@
         tr.appendChild(td(r.tareas.length ? (done + '/' + r.tareas.length) : '—'));
         var acc = el('td', { class: 'acciones' });
         var bG = el('button', { class: 'btn btn-sm' }, '🔧 Gestionar'); bG.onclick = function () { openEventoDetalle('pendiente', r._id); };
-        var bD = el('button', { class: 'btn btn-sm btn-danger' }, '🗑️'); bD.onclick = function () { if (!confirm('¿Eliminar este pendiente?')) return; DB.registros.pendiente = DB.registros.pendiente.filter(function (x) { return x._id !== r._id; }); guardarDB(); renderSidebar(); renderPendientes(); };
+        var bD = el('button', { class: 'btn btn-sm btn-danger', title: 'Eliminar pendiente', 'aria-label': 'Eliminar pendiente' }, '🗑️'); bD.onclick = function () { if (!confirm('¿Eliminar este pendiente?')) return; DB.registros.pendiente = DB.registros.pendiente.filter(function (x) { return x._id !== r._id; }); guardarDB(); renderSidebar(); renderPendientes(); };
         acc.appendChild(bG); acc.appendChild(document.createTextNode(' ')); acc.appendChild(bD);
         tr.appendChild(acc);
         tb.appendChild(tr);
@@ -1253,8 +1378,11 @@
         var rec = collectForm(etapa, form.controls);
         if (editando) {
           rec._id = editando._id; rec._stage = id; rec._createdAt = editando._createdAt; rec._updatedAt = new Date().toISOString();
+          // Conserva la gestión del evento (tareas y bitácora) al editar sus campos.
+          if (Array.isArray(editando.tareas)) rec.tareas = editando.tareas;
+          if (Array.isArray(editando.actualizaciones)) rec.actualizaciones = editando.actualizaciones;
           var idx = DB.registros[id].findIndex(function (r) { return r._id === editando._id; });
-          DB.registros[id][idx] = rec;
+          if (idx >= 0) DB.registros[id][idx] = rec; else DB.registros[id].push(rec);
           toast('Registro actualizado.', 'ok');
         } else {
           rec._id = uid(); rec._stage = id; rec._createdAt = new Date().toISOString();
@@ -1360,11 +1488,11 @@
         tr.appendChild(td(obs.length > 60 ? (obs.slice(0, 60) + '…') : (obs || '—')));
       }
       var acc = el('td', { class: 'acciones' });
-      var bGes = el('button', { class: 'btn btn-sm', title: 'Gestionar (tareas y actualizaciones)' }, '🔧');
+      var bGes = el('button', { class: 'btn btn-sm', title: 'Gestionar (tareas y actualizaciones)', 'aria-label': 'Gestionar tareas y actualizaciones' }, '🔧');
       bGes.onclick = function () { openEventoDetalle(etapa.id, r._id); };
       var bEd = el('button', { class: 'btn btn-sm' }, '✏️ Editar');
       bEd.onclick = function () { STATE.editId = r._id; renderEtapa(etapa.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-      var bDel = el('button', { class: 'btn btn-sm btn-danger' }, '🗑️');
+      var bDel = el('button', { class: 'btn btn-sm btn-danger', title: 'Eliminar registro', 'aria-label': 'Eliminar registro' }, '🗑️');
       bDel.onclick = function () {
         if (!confirm('¿Eliminar este registro de «' + etapa.nombre + '»? Esta acción no se puede deshacer.')) return;
         DB.registros[etapa.id] = DB.registros[etapa.id].filter(function (x) { return x._id !== r._id; });
@@ -1599,7 +1727,9 @@
           DB.config = DB.config || {};
           if (!DB.config.tecnicos || !DB.config.tecnicos.length) DB.config.tecnicos = TECNICOS_DEFAULT.slice();
           if (!DB.config.empresas) DB.config.empresas = [];
+          if (!DB.equiposOverrides || typeof DB.equiposOverrides !== 'object') DB.equiposOverrides = {};
           ETAPAS.forEach(function (e) { if (!Array.isArray(DB.registros[e.id])) DB.registros[e.id] = []; });
+          invalidarEquipos(); // el inventario puede traer overrides distintos
           guardarDB(); toast('Respaldo restaurado.', 'ok'); navegar('__dashboard');
         } catch (e) { toast('No se pudo leer el respaldo: ' + e.message, 'err'); }
       };
@@ -1896,8 +2026,11 @@
     var mt = document.getElementById('menuToggle');
     var sb = document.getElementById('sidebar');
     var bd = document.getElementById('backdrop');
-    mt.onclick = function () { sb.classList.toggle('open'); bd.classList.toggle('show'); };
-    bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); };
+    mt.onclick = function () {
+      var abierto = sb.classList.toggle('open'); bd.classList.toggle('show');
+      mt.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+    };
+    bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); mt.setAttribute('aria-expanded', 'false'); };
 
     render();
   }

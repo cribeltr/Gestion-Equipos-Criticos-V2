@@ -5,38 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gestión de Equipos en Servicio Técnico</title>
   <meta name="description" content="Registro por etapas del proceso de gestión de equipos en servicio técnico, con persistencia local y exportación a Excel." />
+  <meta name="theme-color" content="#1f4f68" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>" />
 </head>
 <body>
+  <a class="skip-link" href="#content">Saltar al contenido</a>
   <div class="app">
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar" id="sidebar" aria-label="Menú de navegación">
       <div class="brand">
         <h1>🩺 Gestión de Equipos</h1>
         <span>Servicio Técnico · Equipos Críticos</span>
       </div>
-      <nav class="nav" id="nav"></nav>
+      <nav class="nav" id="nav" aria-label="Secciones de la aplicación"></nav>
     </aside>
 
     <div class="backdrop" id="backdrop"></div>
 
     <div class="main">
-      <div class="topbar">
-        <button class="btn btn-ghost menu-toggle" id="menuToggle" title="Menú">☰</button>
+      <header class="topbar">
+        <button class="btn btn-ghost menu-toggle" id="menuToggle" title="Menú" aria-label="Abrir o cerrar el menú" aria-controls="sidebar" aria-expanded="false">☰</button>
         <div>
           <h2 id="viewTitle">Resumen</h2>
           <div class="sub" id="viewSub"></div>
         </div>
         <div class="spacer"></div>
         <button class="btn btn-success" id="btnExport" title="Exportar todos los registros a Excel">⬇️ Exportar a Excel</button>
-      </div>
-      <div class="content" id="content"></div>
+      </header>
+      <main class="content" id="content" tabindex="-1"></main>
     </div>
   </div>
 
   <datalist id="dl-empresas"></datalist>
   <datalist id="dl-folios"></datalist>
-  <div class="toast-wrap" id="toasts"></div>
+  <div class="toast-wrap" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+  <noscript>
+    <p style="padding:24px;font-family:sans-serif">Esta aplicación necesita JavaScript habilitado para funcionar.</p>
+  </noscript>
 
   <script src="equipos.js"></script>
   <script src="vendor-xlsx.js"></script>

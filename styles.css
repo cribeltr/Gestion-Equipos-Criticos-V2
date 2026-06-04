@@ -124,8 +124,29 @@ body {
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-sm { padding: 4px 9px; font-size: 12.5px; }
 .btn-danger { color: var(--rojo); }
-.btn-danger:hover { background: #fdeceA; background: #fbeae7; }
+.btn-danger:hover { background: #fbeae7; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* ---------- Accesibilidad: foco visible por teclado ---------- */
+:focus-visible {
+  outline: 2px solid var(--azul);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.nav a:focus-visible { outline: 2px solid #9fd0e6; outline-offset: -2px; }
+/* Enlace para saltar al contenido (visible solo al enfocarlo con teclado) */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  background: var(--azul-osc);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 0 0 8px 0;
+  font-size: 13.5px;
+}
+.skip-link:focus { left: 0; }
 
 /* ---------- Cards ---------- */
 .card {
@@ -496,3 +517,28 @@ table.data td.acciones { white-space: nowrap; }
 .tl-txt { font-size: 13.5px; white-space: pre-wrap; }
 
 select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 4px 7px; font-size: 12.5px; font-family: inherit; background: #fff; }
+
+/* ---------- Indicador de antigüedad (KPI de gestión) ---------- */
+.age-pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
+.age-ok { background: #e3f5ec; color: #1f7a4d; }
+.age-warn { background: #fff1dd; color: #9a6512; }
+.age-bad { background: #fbe7e4; color: #a12f20; }
+
+/* ---------- Respeto a "reducir movimiento" ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+
+/* ---------- Impresión de reportes / fichas ---------- */
+@media print {
+  .sidebar, .topbar, .toolbar, .form-actions, .crear-evento, .backdrop,
+  .toast-wrap, .menu-toggle, td.acciones, th:last-child, .skip-link { display: none !important; }
+  body { background: #fff; font-size: 11.5px; }
+  .app, .main { display: block; }
+  .content { padding: 0; max-width: none; }
+  .card, .stat, .tabla-wrap { box-shadow: none; border-color: #bbb; break-inside: avoid; }
+  .modal-backdrop { position: static; background: none; padding: 0; overflow: visible; }
+  .modal { box-shadow: none; max-width: none; }
+  table.data th { color: #000; }
+  a[href]::after { content: ''; }
+}
