@@ -202,14 +202,14 @@
   var GRUPOS_NAV = [
     { label: 'Inicio', items: ['__dashboard', '__inventario'] },
     { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__pendientes', '__est_desconocido'] },
-    { label: 'Solicitud', items: ['solicitud'] },
-    { label: 'Vía A · Servicio técnico', items: ['envio', 'estado_st', 'recepcion'] },
-    { label: 'Vía B · En sitio', items: ['diagnostico'] },
-    { label: 'Subflujo comercial', items: ['cotizacion', 'gestion_oc', 'emision_oc'] },
-    { label: 'Cierre del ciclo', items: ['reparacion', 'cierre'] },
     { label: 'Mantención preventiva', items: ['__mp_import', 'mp'] },
     { label: 'Gestión', items: ['__todos', '__config'] }
   ];
+  // Nota: las etapas del flujo correctivo (solicitud, envío, estado_st, recepción,
+  // diagnóstico, cotización, gestión_oc, emisión_oc, reparación, cierre) ya no
+  // figuran en el panel izquierdo. Se registran desde el flujo del «Resumen» o
+  // desde la ficha de cada equipo (botón «➕ Correctivo»). Siguen funcionando
+  // por completo (edición, tablas, exportación y contadores).
 
   // Vistas del tablero de estado: cada una filtra el inventario al estado dado.
   var ESTADO_VIEWS = {
