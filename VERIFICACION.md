@@ -131,7 +131,25 @@ Recomendación de fondo: corregir las series en el Excel de origen (formato
 
 Pruebas automatizadas de esta iteración: **6/6**.
 
-## 8. Cómo reproducir las pruebas
+## 8. Exportación por vista y ficha más ancha (quinta iteración)
+
+- **Verificación del Excel:** se comparó un respaldo real con su exportación y
+  los datos coinciden **exactamente** (2.333 registros, estados 687/189/16/74,
+  los 3 registros de `2-120997`, sin caracteres que dañen el archivo). No había
+  pérdida de datos.
+- **Exportación contextual:** el botón **«Exportar a Excel»** ahora exporta **la
+  vista actual**: en Inventario o en un estado (Operativos, No operativos, En
+  servicio técnico, Desconocido) exporta solo los equipos visibles (respeta la
+  búsqueda y el filtro); en una etapa, esa etapa; en «Todos los registros», la
+  bitácora filtrada; y en el Resumen, todo. El botón cambia su texto según la
+  vista. La exportación completa sigue disponible (Resumen y Configuración).
+- **Ficha del equipo (modal)** ampliada (máx. 1000 → 1600 px) para aprovechar la
+  pantalla.
+
+Pruebas automatizadas de esta iteración: **13/13** (exportación contextual con
+datos reales).
+
+## 9. Cómo reproducir las pruebas
 
 No se requieren dependencias para usar la app (basta abrir `index.html`). Para
 las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:

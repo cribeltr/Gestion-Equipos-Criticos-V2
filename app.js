@@ -652,6 +652,7 @@
   function render() {
     refrescarDatalists();
     renderSidebar();
+    configurarExport('Exportar a Excel', exportarTodo); // por defecto; cada vista lo ajusta
     if (STATE.view === '__dashboard') renderDashboard();
     else if (STATE.view === '__inventario') renderInventario();
     else if (ESTADO_VIEWS[STATE.view]) renderInventario(ESTADO_VIEWS[STATE.view]);
@@ -755,6 +756,7 @@
   // ------------------------------------------------------------- Dashboard
   function renderDashboard() {
     setTitulo('Resumen del proceso', 'Gestión de equipos en servicio técnico · versión 2.0');
+    configurarExport('Exportar todo', exportarTodo);
     contentEl.innerHTML = '';
 
     var folios = folioList();
@@ -994,8 +996,7 @@
     toolbar.appendChild(el('div', { class: 'spacer' }));
     var note = el('span', { class: 'count-note' });
     toolbar.appendChild(note);
-    var btnExp = el('button', { class: 'btn' }, '⬇️ Exportar inventario');
-    btnExp.onclick = function () { exportarInventario(); };
+    var btnExp = el('button', { class: 'btn' }, '⬇️ Exportar lo visible');
     toolbar.appendChild(btnExp);
     body.appendChild(toolbar);
 
@@ -1011,7 +1012,8 @@
       x._hayN = normNum(x._hay);
     });
 
-    function pintar() {
+    // Filtrado compartido por la tabla y por la exportación (exporta lo que se ve).
+    function filtrarRows() {
       var q = search.value.trim().toLowerCase();
       var qN = normNum(q);
       var ef = selEstado.value;
@@ -1021,6 +1023,24 @@
         return x._hay.indexOf(q) >= 0 || x._hayN.indexOf(qN) >= 0;
       });
       rows.sort(function (a, b) { return cmpNat(a.e.id, b.e.id) || cmpNat(a.e.inventario, b.e.inventario); });
+      return rows;
+    }
+
+    // Exporta exactamente los equipos visibles (estado + búsqueda actuales).
+    function exportarVista() {
+      var rows = filtrarRows();
+      if (!rows.length) { toast('No hay equipos que exportar en esta vista.', 'err'); return; }
+      var titulo = estadoForzado ? ('Inventario ' + estadoForzado) : (selEstado.value ? ('Inventario ' + selEstado.value) : 'Inventario');
+      try {
+        XLSXWriter.descargar(nombreArchivo(titulo), [hojaInventarioDesde(rows, titulo.slice(0, 31))]);
+        toast(rows.length + ' equipo(s) exportados.', 'ok');
+      } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
+    }
+    btnExp.onclick = exportarVista;
+    configurarExport(estadoForzado ? ('Exportar ' + estadoForzado) : 'Exportar inventario', exportarVista);
+
+    function pintar() {
+      var rows = filtrarRows();
       note.textContent = rows.length + ' equipo(s)';
       cont.innerHTML = '';
       if (!rows.length) { cont.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '🔎'), el('div', {}, 'Sin resultados.')])); return; }
@@ -1351,6 +1371,7 @@
   // -------------------------------------------------------------- Pendientes
   function renderPendientes() {
     setTitulo('⚠️ Pendientes', 'Gestión y seguimiento de asuntos pendientes por equipo');
+    configurarExport('Exportar pendientes', function () { exportarEtapa(ETAPAS_BY_ID['pendiente']); });
     contentEl.innerHTML = '';
     var etapa = ETAPAS_BY_ID['pendiente'];
     var lista = DB.registros.pendiente.slice();
@@ -1448,6 +1469,7 @@
   function renderEtapa(id) {
     var etapa = ETAPAS_BY_ID[id];
     setTitulo(etapa.icono + ' ' + etapa.nombre, etapa.via + ' · ' + (DB.registros[id].length) + ' registro(s)');
+    configurarExport('Exportar etapa', function () { exportarEtapa(etapa); });
     contentEl.innerHTML = '';
 
     var editando = STATE.editId ? DB.registros[id].filter(function (r) { return r._id === STATE.editId; })[0] : null;
@@ -1629,15 +1651,28 @@
     var cont = el('div');
     body.appendChild(cont);
 
-    function pintar() {
-      var rows = bitacoraRows();
+    function filtrarRegistros() {
       var f = search.value.trim().toLowerCase();
       var etf = selEtapa.value;
-      rows = rows.filter(function (x) {
+      return bitacoraRows().filter(function (x) {
         if (etf && x.et.id !== etf) return false;
         if (!f) return true;
         return x._hay.indexOf(f) >= 0;
       });
+    }
+
+    // El botón superior exporta los registros visibles (etapa + búsqueda actuales).
+    configurarExport('Exportar registros', function () {
+      var rows = filtrarRegistros();
+      if (!rows.length) { toast('No hay registros que exportar en esta vista.', 'err'); return; }
+      try {
+        XLSXWriter.descargar(nombreArchivo('Registros'), [hojaBitacoraDesde(rows)]);
+        toast(rows.length + ' registro(s) exportados.', 'ok');
+      } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
+    });
+
+    function pintar() {
+      var rows = filtrarRegistros();
       note.textContent = rows.length + ' registro(s)';
       cont.innerHTML = '';
       if (!rows.length) { cont.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '🔎'), el('div', {}, 'Sin resultados.')])); return; }
@@ -1887,9 +1922,8 @@
     };
   }
 
-  function hojaBitacora() {
-    var rows = bitacoraRows();
-    var cols = [
+  function colsBitacora() {
+    return [
       { titulo: 'Folio', ancho: 14, get: function (x) { return x.r.folio || ''; } },
       { titulo: 'Fecha', ancho: 12, get: function (x) { return fmtFecha(x.r.fecha); } },
       { titulo: 'Etapa', ancho: 26, get: function (x) { return x.et.nombre; } },
@@ -1905,16 +1939,18 @@
       { titulo: 'Observaciones', ancho: 40, get: function (x) { return x.r.observaciones || ''; } },
       { titulo: 'Registrado el', ancho: 18, get: function (x) { return fmtFechaHora(x.r._createdAt); } }
     ];
+  }
+  function hojaBitacoraDesde(rows, nombre) {
+    var cols = colsBitacora();
     return {
-      nombre: 'Bitácora general',
+      nombre: nombre || 'Bitácora general',
       columnas: cols.map(function (c) { return { titulo: c.titulo, ancho: c.ancho }; }),
       filas: rows.map(function (x) { return cols.map(function (c) { return c.get(x); }); })
     };
   }
+  function hojaBitacora() { return hojaBitacoraDesde(bitacoraRows()); }
 
-  function hojaInventario() {
-    var inv = calcInventario();
-    inv.sort(function (a, b) { return cmpNat(a.e.id, b.e.id) || cmpNat(a.e.inventario, b.e.inventario); });
+  function hojaInventarioDesde(items, nombre) {
     var cols = [
       { titulo: 'ID', ancho: 8, get: function (x) { return x.e.id || ''; } },
       { titulo: 'N° Carpeta', ancho: 12, get: function (x) { return x.e.carpeta || ''; } },
@@ -1934,10 +1970,20 @@
       { titulo: 'N° registros', ancho: 12, get: function (x) { return x.n; } }
     ];
     return {
-      nombre: 'Inventario',
+      nombre: nombre || 'Inventario',
       columnas: cols.map(function (c) { return { titulo: c.titulo, ancho: c.ancho }; }),
-      filas: inv.map(function (x) { return cols.map(function (c) { return c.get(x); }); })
+      filas: items.map(function (x) { return cols.map(function (c) { return c.get(x); }); })
     };
+  }
+  function hojaInventario() {
+    var inv = calcInventario();
+    inv.sort(function (a, b) { return cmpNat(a.e.id, b.e.id) || cmpNat(a.e.inventario, b.e.inventario); });
+    return hojaInventarioDesde(inv, 'Inventario');
+  }
+
+  // Nombre de archivo saneado + fecha.
+  function nombreArchivo(base) {
+    return (String(base).replace(/[^\wáéíóúñ ]/gi, '').trim().replace(/\s+/g, '_') || 'Export') + '_' + hoyISO() + '.xlsx';
   }
 
   function exportarInventario() {
@@ -1945,6 +1991,15 @@
       XLSXWriter.descargar('Inventario_Equipos_' + hoyISO() + '.xlsx', [hojaInventario()]);
       toast('Inventario exportado a Excel.', 'ok');
     } catch (e) { toast('Error al exportar: ' + e.message, 'err'); }
+  }
+
+  // ---- Exportación contextual: el botón superior exporta la vista actual ----
+  var vistaExport = null;
+  function exportarVistaActual() { (typeof vistaExport === 'function' ? vistaExport : exportarTodo)(); }
+  function configurarExport(label, fn) {
+    vistaExport = (typeof fn === 'function') ? fn : exportarTodo;
+    var b = document.getElementById('btnExport');
+    if (b) { b.textContent = '⬇️ ' + label; b.setAttribute('title', 'Exportar a Excel — ' + label.toLowerCase()); }
   }
 
   function exportarTodo() {
@@ -2153,7 +2208,7 @@
     viewTitleEl = document.getElementById('viewTitle');
     viewSubEl = document.getElementById('viewSub');
 
-    document.getElementById('btnExport').onclick = exportarTodo;
+    document.getElementById('btnExport').onclick = exportarVistaActual;
     var mt = document.getElementById('menuToggle');
     var sb = document.getElementById('sidebar');
     var bd = document.getElementById('backdrop');
