@@ -116,7 +116,22 @@ Pruebas automatizadas de esta iteración: **7/7** (guardado comprimido y
 relectura, compatibilidad con datos antiguos, y aviso correcto al exceder la
 cuota). Regresión global: **15/15 + 16/16 + 7/7**.
 
-## 7. Cómo reproducir las pruebas
+## 7. Búsqueda de series con ceros a la izquierda (cuarta iteración)
+
+**Síntoma reportado:** la serie `00298` del equipo `2-120997` no aparecía al
+buscar en el inventario. **Causa:** esa serie quedó guardada como `298` —el Excel
+de origen la tomó como número y eliminó los ceros iniciales (afecta a varias
+series numéricas: ~310 puramente numéricas, 115 de ≤ 5 dígitos).
+
+**Solución:** la búsqueda (inventario y selector de equipos) ahora es **tolerante
+a los ceros a la izquierda**: normaliza los números antes de comparar, de modo
+que `00298` encuentra `298` y viceversa, sin afectar el resto de las búsquedas.
+Recomendación de fondo: corregir las series en el Excel de origen (formato
+**texto**) y regenerar `equipos.js`.
+
+Pruebas automatizadas de esta iteración: **6/6**.
+
+## 8. Cómo reproducir las pruebas
 
 No se requieren dependencias para usar la app (basta abrir `index.html`). Para
 las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:

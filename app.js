@@ -358,10 +358,16 @@
     if (!eq) return '';
     return (eq.inv || '(s/inv)') + ' — ' + (eq.nombre || '');
   }
+  // Normaliza los ceros a la izquierda de cada número (p. ej. «00298» -> «298»).
+  // Permite encontrar series guardadas sin sus ceros iniciales y viceversa.
+  function normNum(s) {
+    return String(s == null ? '' : s).replace(/\d+/g, function (d) { return d.replace(/^0+(\d)/, '$1'); });
+  }
 
   // -------------------------------------------------------------- Búsqueda eq.
   function buscarEquipos(q, limite) {
     var tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    var tokensN = tokens.map(normNum);
     var out = [];
     var EQ = getEquipos();
     for (var i = 0; i < EQ.length; i++) {
@@ -369,8 +375,11 @@
       var hay = ((e.inventario || '') + ' ' + (e.equipo || '') + ' ' + (e.serie || '') + ' ' +
         (e.marca || '') + ' ' + (e.modelo || '') + ' ' + (e.servicio || '') + ' ' +
         (e.unidad || '') + ' ' + (e.ubicacion || '')).toLowerCase();
+      var hayN = normNum(hay);
       var ok = true;
-      for (var t = 0; t < tokens.length; t++) { if (hay.indexOf(tokens[t]) < 0) { ok = false; break; } }
+      for (var t = 0; t < tokens.length; t++) {
+        if (hay.indexOf(tokens[t]) < 0 && hayN.indexOf(tokensN[t]) < 0) { ok = false; break; }
+      }
       if (ok) { out.push(e); if (out.length >= limite) break; }
     }
     return out;
@@ -993,17 +1002,23 @@
     var cont = el('div');
     body.appendChild(cont);
 
+    // Haystacks precalculados (normal y normalizado por ceros a la izquierda).
+    inv.forEach(function (x) {
+      var e = x.e;
+      x._hay = ((e.id || '') + ' ' + (e.carpeta || '') + ' ' + (e.inventario || '') + ' ' + (e.equipo || '') + ' ' +
+        (e.serie || '') + ' ' + (e.marca || '') + ' ' + (e.modelo || '') + ' ' + (e.servicio || '') + ' ' +
+        (e.unidad || '') + ' ' + (e.ubicacion || '') + ' ' + (e.procedencia || '')).toLowerCase();
+      x._hayN = normNum(x._hay);
+    });
+
     function pintar() {
       var q = search.value.trim().toLowerCase();
+      var qN = normNum(q);
       var ef = selEstado.value;
       var rows = inv.filter(function (x) {
         if (ef && x.estado !== ef) return false;
         if (!q) return true;
-        var e = x.e;
-        var hay = ((e.id || '') + ' ' + (e.carpeta || '') + ' ' + (e.inventario || '') + ' ' + (e.equipo || '') + ' ' +
-          (e.serie || '') + ' ' + (e.marca || '') + ' ' + (e.modelo || '') + ' ' + (e.servicio || '') + ' ' +
-          (e.unidad || '') + ' ' + (e.ubicacion || '') + ' ' + (e.procedencia || '')).toLowerCase();
-        return hay.indexOf(q) >= 0;
+        return x._hay.indexOf(q) >= 0 || x._hayN.indexOf(qN) >= 0;
       });
       rows.sort(function (a, b) { return cmpNat(a.e.id, b.e.id) || cmpNat(a.e.inventario, b.e.inventario); });
       note.textContent = rows.length + ' equipo(s)';
