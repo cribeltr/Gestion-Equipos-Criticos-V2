@@ -92,7 +92,31 @@ Pruebas automatizadas de esta iteración: **16/16** (incluye el caso de que un
 equipo sale de «En servicio técnico» y pasa a «Operativos» al cerrar el ciclo, y
 el aviso de desajuste fecha/mes en MP).
 
-## 6. Cómo reproducir las pruebas
+## 6. Almacenamiento: cuota de localStorage (tercera iteración)
+
+**Síntoma reportado:** al crear un pendiente aparecía «Failed to execute 'setItem'
+on 'Storage': … exceeded the quota». La base de datos superaba el límite de
+`localStorage` (~5 MB), normalmente tras importar la Programación MP (miles de
+eventos, cada uno con los datos del equipo).
+
+**Solución:**
+- **Compresión** de la base de datos antes de guardar (`lib-lzstring.js`,
+  LZ-string, MIT). En una importación completa (965 equipos × 12 meses = 11.580
+  eventos) el tamaño pasa de **~11 MB a ~0,25 MB (−97,7 %)**, con round-trip
+  exacto (incluye acentos y emoji). Compatible con datos antiguos sin comprimir.
+- **Manejo del error de cuota:** si aun así se llena, se muestra un aviso claro y
+  accionable en vez de un error técnico, sin romper la app.
+- **Herramientas en Configuración:** uso aproximado de almacenamiento y botón
+  **«Vaciar mantenciones preventivas»** (reimportables) para liberar espacio.
+- Se corrigió además un error de **orden de inicialización** (la marca de datos
+  comprimidos se definía con `var` después de `cargarDB()`); ahora es una función
+  *hoisted*, de modo que la primera carga descomprime correctamente.
+
+Pruebas automatizadas de esta iteración: **7/7** (guardado comprimido y
+relectura, compatibilidad con datos antiguos, y aviso correcto al exceder la
+cuota). Regresión global: **15/15 + 16/16 + 7/7**.
+
+## 7. Cómo reproducir las pruebas
 
 No se requieren dependencias para usar la app (basta abrir `index.html`). Para
 las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:

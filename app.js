@@ -226,9 +226,22 @@
   var STATE = { view: '__dashboard', editId: null, prefill: null };
   var MP_STATE = { events: null, year: '', equipos: null, stats: null }; // último .xlsm procesado
 
+  // Marca de datos comprimidos: carácter de control (0x01) que no aparece ni en el
+  // JSON (empieza por '{') ni en la salida de compressToUTF16 (códigos ≥ 32).
+  // Función (no var) para que esté disponible aunque cargarDB() se llame antes
+  // de esta línea durante la carga del módulo (hoisting de funciones).
+  function lzMark() { return String.fromCharCode(1); }
+  function tieneLZ() { return typeof window !== 'undefined' && window.LZString; }
+
   function cargarDB() {
     var db = null;
-    try { db = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { db = null; }
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw != null) {
+        var text = (raw.charAt(0) === lzMark() && tieneLZ()) ? window.LZString.decompressFromUTF16(raw.slice(1)) : raw;
+        db = JSON.parse(text);
+      }
+    } catch (e) { db = null; }
     if (!db || typeof db !== 'object') db = {};
     if (!db.registros) db.registros = {};
     if (!db.config) db.config = {};
@@ -238,7 +251,33 @@
     ETAPAS.forEach(function (e) { if (!Array.isArray(db.registros[e.id])) db.registros[e.id] = []; });
     return db;
   }
-  function guardarDB() { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
+
+  // Guarda comprimido (cabe mucho más en la cuota de localStorage). Si falla por
+  // cuota u otro motivo, informa con un aviso claro en vez de romper la app.
+  function guardarDB() {
+    try {
+      var json = JSON.stringify(DB);
+      var payload = tieneLZ() ? (lzMark() + window.LZString.compressToUTF16(json)) : json;
+      localStorage.setItem(STORAGE_KEY, payload);
+      return true;
+    } catch (e) {
+      var esCuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || /quota|exceeded/i.test(e.message || ''));
+      if (esCuota) {
+        toast('Almacenamiento local lleno: no se pudo guardar. Descargue un respaldo (Configuración → Descargar respaldo) y libere espacio, por ejemplo «Vaciar mantenciones preventivas».', 'err');
+      } else {
+        toast('No se pudo guardar localmente: ' + (e && e.message ? e.message : e), 'err');
+      }
+      return false;
+    }
+  }
+
+  // Tamaño aproximado del almacenamiento usado por la app (en KB).
+  function tamanoAlmacenamientoKB() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY) || '';
+      return Math.round(raw.length * 2 / 1024); // ~2 bytes por code unit UTF-16
+    } catch (e) { return 0; }
+  }
 
   // ---- Inventario mutable: lista base + overrides (editable / actualizable por .xlsm) ----
   var _equiposCache = null;
@@ -1723,7 +1762,11 @@
     var card3 = el('div', { class: 'card' });
     card3.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '💾 Datos y respaldo'), el('span', { class: 'desc' }, getEquipos().length + ' equipos críticos en el inventario.')]));
     var body3 = el('div', { class: 'card-body' });
-    body3.appendChild(el('div', { class: 'hint' }, 'Los registros se guardan localmente en este navegador (localStorage). Use el respaldo para trasladarlos a otro equipo.'));
+    var nMP = DB.registros.mp.length;
+    body3.appendChild(el('div', { class: 'hint' },
+      'Los registros se guardan localmente en este navegador (localStorage) de forma comprimida. ' +
+      'Uso aproximado: ' + tamanoAlmacenamientoKB() + ' KB · ' + totalRegistros() + ' registros (' + nMP + ' mantenciones preventivas). ' +
+      'Use el respaldo para trasladarlos a otro equipo.'));
     var actions = el('div', { class: 'form-actions' });
 
     var bExport = el('button', { class: 'btn btn-success' }, '⬇️ Exportar a Excel (.xlsx)');
@@ -1732,13 +1775,21 @@
     bBackup.onclick = exportarRespaldo;
     var bRestore = el('button', { class: 'btn' }, '📤 Restaurar respaldo (JSON)');
     bRestore.onclick = importarRespaldo;
+    var bClearMP = el('button', { class: 'btn btn-danger' }, '🧰 Vaciar mantenciones preventivas');
+    bClearMP.onclick = function () {
+      if (!nMP) { toast('No hay mantenciones preventivas que vaciar.', 'err'); return; }
+      if (!confirm('¿Vaciar las ' + nMP + ' mantenciones preventivas? Libera espacio y se pueden volver a importar desde la Programación MP (.xlsm). Se recomienda descargar un respaldo antes.')) return;
+      DB.registros.mp = [];
+      if (guardarDB()) toast('Mantenciones preventivas vaciadas.', 'ok');
+      renderSidebar(); renderConfig();
+    };
     var bClear = el('button', { class: 'btn btn-danger' }, '🗑️ Borrar todos los registros');
     bClear.onclick = function () {
       if (!confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer. Se recomienda descargar un respaldo antes.')) return;
       ETAPAS.forEach(function (e) { DB.registros[e.id] = []; });
       guardarDB(); toast('Registros eliminados.'); navegar('__dashboard');
     };
-    actions.appendChild(bExport); actions.appendChild(bBackup); actions.appendChild(bRestore); actions.appendChild(bClear);
+    actions.appendChild(bExport); actions.appendChild(bBackup); actions.appendChild(bRestore); actions.appendChild(bClearMP); actions.appendChild(bClear);
     body3.appendChild(actions);
     card3.appendChild(body3);
     contentEl.appendChild(card3);
