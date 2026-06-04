@@ -63,8 +63,10 @@
   var GRUPOS_NAV = [
     { label: 'Inicio', items: ['__resumen', '__inv'] },
     { label: 'Estado de equipos', items: ['__est_operativo', '__est_no_operativo', '__est_st', '__est_baja', '__pendientes', '__est_desconocido'] },
-    { label: 'Gestión', items: ['__eventos', '__ciclos'] }
+    { label: 'Gestión', items: ['__eventos', '__ciclos', '__cumplimiento', '__auditoria', '__config'] }
   ];
+  var STORAGE_KEY = 'hhha_v1_data';
+  var RESULTADOS_MP = ['Si', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'FS', 'NU', 'Baja', 'No'];
 
   var contentEl, viewTitleEl, viewSubEl;
   function setTitulo(t, s) { viewTitleEl.textContent = t; viewSubEl.textContent = s || ''; }
@@ -93,6 +95,9 @@
     else if (STATE.view === '__pendientes') renderPendientes();
     else if (STATE.view === '__eventos') renderEventos();
     else if (STATE.view === '__ciclos') renderCiclos();
+    else if (STATE.view === '__cumplimiento') renderCumplimiento();
+    else if (STATE.view === '__auditoria') renderAuditoria();
+    else if (STATE.view === '__config') renderConfig();
     else renderResumen();
   }
 
@@ -115,6 +120,9 @@
         else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'pendientes abiertos'; }
         else if (id === '__eventos') { label = 'Eventos'; icono = '🗂️'; badge = eventosVigentes().length; badgeTitle = 'eventos'; }
         else if (id === '__ciclos') { label = 'Ciclos correctivos'; icono = '🔁'; badge = ciclosAbiertos(); badgeTitle = 'ciclos abiertos'; }
+        else if (id === '__cumplimiento') { label = 'Cumplimiento / SLA'; icono = '📈'; }
+        else if (id === '__auditoria') { label = 'Auditoría'; icono = '🧾'; }
+        else if (id === '__config') { label = 'Configuración'; icono = '⚙️'; }
         var activo = STATE.view === id;
         var a = el('a', {
           class: activo ? 'active' : '', role: 'link', tabindex: '0', 'aria-current': activo ? 'page' : null,
@@ -280,6 +288,16 @@
       el('span', { class: 'count-note' }, encargado(eq) ? ('Encargado: ' + encargado(eq)) : 'Sin encargado')
     ]));
 
+    // Acciones rápidas para este equipo (precargado).
+    var crear = el('div', { class: 'crear-evento' });
+    crear.appendChild(el('span', { class: 'k' }, 'Registrar para este equipo:'));
+    var bEv = el('button', { class: 'btn btn-primary btn-sm' }, '➕ Evento'); bEv.onclick = function () { closeModal(); abrirFormEvento(eq.inv); };
+    var bMp = el('button', { class: 'btn btn-sm' }, '🧰 Mantención'); bMp.onclick = function () { closeModal(); abrirFormEvento(eq.inv); };
+    var bPe = el('button', { class: 'btn btn-sm' }, '⚠️ Pendiente'); bPe.onclick = function () { closeModal(); abrirFormPendiente(eq.inv); };
+    var bCi = el('button', { class: 'btn btn-sm' }, '🔁 Abrir ciclo'); bCi.onclick = function () { closeModal(); abrirFormCiclo(eq.inv); };
+    crear.appendChild(bEv); crear.appendChild(bMp); crear.appendChild(bPe); crear.appendChild(bCi);
+    cont.appendChild(crear);
+
     var fg = el('div', { class: 'ficha-grid' });
     [['ID', eq.id], ['N° Inventario', eq.inv], ['N° Carpeta', eq.carpeta], ['Familia', eq.fam], ['Equipo', eq.equipo], ['Servicio', eq.servicio],
     ['Unidad', eq.unidad], ['Ubicación', eq.ubic], ['Procedencia', eq.proc], ['Marca', eq.marca], ['Modelo', eq.modelo], ['Serie', eq.serie],
@@ -374,6 +392,7 @@
     toolbar.appendChild(search); toolbar.appendChild(selE); toolbar.appendChild(selT);
     toolbar.appendChild(el('div', { class: 'spacer' }));
     var note = el('span', { class: 'count-note' }); toolbar.appendChild(note);
+    var bNewP = el('button', { class: 'btn btn-primary' }, '➕ Nuevo pendiente'); bNewP.onclick = function () { abrirFormPendiente(null); }; toolbar.appendChild(bNewP);
     body.appendChild(toolbar);
     var cont = el('div'); body.appendChild(cont);
 
@@ -434,6 +453,7 @@
     toolbar.appendChild(search); toolbar.appendChild(selT);
     toolbar.appendChild(el('div', { class: 'spacer' }));
     var note = el('span', { class: 'count-note' }); toolbar.appendChild(note);
+    var bNewE = el('button', { class: 'btn btn-primary' }, '➕ Registrar evento'); bNewE.onclick = function () { abrirFormEvento(null); }; toolbar.appendChild(bNewE);
     body.appendChild(toolbar);
     var cont = el('div'); body.appendChild(cont);
 
@@ -480,6 +500,7 @@
     toolbar.appendChild(search); toolbar.appendChild(selE);
     toolbar.appendChild(el('div', { class: 'spacer' }));
     var note = el('span', { class: 'count-note' }); toolbar.appendChild(note);
+    var bNewC = el('button', { class: 'btn btn-primary' }, '🔁 Abrir ciclo'); bNewC.onclick = function () { abrirFormCiclo(null); }; toolbar.appendChild(bNewC);
     body.appendChild(toolbar);
     var cont = el('div'); body.appendChild(cont);
     function pintar() {
@@ -495,17 +516,265 @@
       if (!rows.length) { cont.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '🔁'), el('div', {}, 'Sin ciclos.')])); return; }
       var wrap = el('div', { class: 'tabla-wrap' });
       var t = el('table', { class: 'data' });
-      t.appendChild(el('thead', {}, el('tr', {}, [th('Folio'), th('N° Inventario'), th('Apertura'), th('Cierre'), th('Estado'), th('Ingeniero'), th('Descripción')])));
+      t.appendChild(el('thead', {}, el('tr', {}, [th('Folio'), th('N° Inventario'), th('Apertura'), th('Cierre'), th('Estado'), th('Ingeniero'), th('Descripción'), th('Acciones')])));
       var tb = el('tbody');
       rows.forEach(function (c) {
+        var acc = el('td', { class: 'acciones' });
+        if (c.estado === 'abierto') {
+          var bC = el('button', { class: 'btn btn-sm' }, '✅ Cerrar');
+          bC.onclick = function () {
+            var motivo = window.prompt('Motivo / justificación del cierre del ciclo:', 'Reparación completada'); if (motivo == null) return;
+            try { H.cerrarCiclo(c.folio, hoyISO(), motivo); H.save(); toast('Ciclo cerrado.', 'ok'); render(); } catch (e) { toast('No se pudo cerrar el ciclo.', 'err'); }
+          };
+          acc.appendChild(bC);
+        } else acc.appendChild(document.createTextNode('—'));
         tb.appendChild(el('tr', {}, [td(c.folio || '—'), td(c.inv || '—'), td(fmtFecha(c.fechaApertura)), td(c.fechaCierre ? fmtFecha(c.fechaCierre) : '—'),
-          td(el('span', { class: 'pill ' + (c.estado === 'abierto' ? 'pill-st' : 'pill-ok') }, c.estado)), td(c.ingenieroAsignado || '—'), td(c.descripcionInicial || '—')]));
+          td(el('span', { class: 'pill ' + (c.estado === 'abierto' ? 'pill-st' : 'pill-ok') }, c.estado)), td(c.ingenieroAsignado || '—'), td(c.descripcionInicial || '—'), acc]));
       });
       t.appendChild(tb); wrap.appendChild(t); cont.appendChild(wrap);
     }
     search.addEventListener('input', pintar); selE.addEventListener('change', pintar);
     pintar();
     card.appendChild(body); contentEl.appendChild(card);
+  }
+
+  // ------------------------------------------------------- Selector de equipo
+  function buildEquipoPicker(initialInv) {
+    var wrap = el('div', { class: 'equipo-pick' });
+    var listId = 'eqp-' + Math.random().toString(36).slice(2);
+    var input = el('input', { type: 'text', autocomplete: 'off', placeholder: 'Buscar equipo por inventario, nombre, serie…', role: 'combobox', 'aria-expanded': 'false', 'aria-controls': listId });
+    var results = el('div', { class: 'equipo-results', id: listId, role: 'listbox' });
+    var chip = el('div', { class: 'equipo-chip' });
+    var selInv = initialInv || null, items = [], matches = [], hl = -1;
+    function onDoc(e) { if (!wrap.contains(e.target)) cerrar(); }
+    function cerrar() { results.classList.remove('show'); input.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', onDoc, true); hl = -1; }
+    function abrir() { results.classList.add('show'); input.setAttribute('aria-expanded', 'true'); document.addEventListener('click', onDoc, true); }
+    function setHl(i) { if (!items.length) return; if (i < 0) i = items.length - 1; else if (i >= items.length) i = 0; if (hl >= 0 && items[hl]) items[hl].classList.remove('hl'); hl = i; items[hl].classList.add('hl'); items[hl].scrollIntoView({ block: 'nearest' }); }
+    function elegir(eq) { selInv = eq.inv; input.value = ''; cerrar(); pintarChip(); }
+    function pintarChip() {
+      if (selInv) {
+        var eq = H.findEquipo(selInv);
+        chip.innerHTML = '<span class="x" title="Quitar" role="button" tabindex="0">✕</span><strong>' + esc(selInv) + '</strong> — ' + esc(eq ? eq.equipo : '') + ' <span style="color:#6b7780">· ' + esc(eq ? eq.servicio : '') + '</span>';
+        chip.classList.add('show'); input.style.display = 'none';
+        var quitar = function () { selInv = null; pintarChip(); input.focus(); };
+        var x = chip.querySelector('.x'); x.onclick = quitar; x.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); quitar(); } };
+      } else { chip.classList.remove('show'); input.style.display = ''; }
+    }
+    function buscar() {
+      var q = input.value.trim().toLowerCase(), qN = normNum(q); results.innerHTML = ''; items = []; matches = []; hl = -1;
+      if (!q) { cerrar(); return; }
+      var eqs = H.getState().equipos, out = [];
+      for (var i = 0; i < eqs.length && out.length < 40; i++) {
+        var e = eqs[i];
+        var hay = ((e.inv || '') + ' ' + (e.equipo || '') + ' ' + (e.serie || '') + ' ' + (e.marca || '') + ' ' + (e.modelo || '') + ' ' + (e.servicio || '') + ' ' + (e.ubic || '')).toLowerCase();
+        if (hay.indexOf(q) >= 0 || normNum(hay).indexOf(qN) >= 0) out.push(e);
+      }
+      matches = out;
+      if (!out.length) { results.innerHTML = '<div class="empty">Sin coincidencias</div>'; abrir(); return; }
+      out.forEach(function (e, i) {
+        var it = el('div', { class: 'item', role: 'option' });
+        it.innerHTML = '<div class="t">' + esc(e.inv || '') + ' — ' + esc(e.equipo || '') + '</div><div class="m">' + esc(e.servicio || '') + ' · ' + esc([e.marca, e.modelo].filter(Boolean).join(' ')) + (e.serie ? (' · Serie ' + esc(e.serie)) : '') + '</div>';
+        it.onclick = function () { elegir(e); }; it.addEventListener('mousemove', function () { setHl(i); });
+        results.appendChild(it); items.push(it);
+      });
+      abrir();
+    }
+    input.addEventListener('input', buscar);
+    input.addEventListener('keydown', function (e) {
+      if (!results.classList.contains('show')) { if (e.key === 'ArrowDown') buscar(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHl(hl + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setHl(hl - 1); }
+      else if (e.key === 'Enter') { if (hl >= 0 && matches[hl]) { e.preventDefault(); elegir(matches[hl]); } }
+      else if (e.key === 'Escape') cerrar();
+    });
+    wrap.appendChild(input); wrap.appendChild(results); wrap.appendChild(chip); pintarChip();
+    return { wrap: wrap, get: function () { return selInv; } };
+  }
+  function field(label, ctrl) { return el('div', { class: 'field' }, [el('label', {}, label), ctrl]); }
+  function fieldFull(label, ctrl) { return el('div', { class: 'field col-full' }, [el('label', {}, label), ctrl]); }
+  function selectDe(opciones, def) { var s = el('select'); opciones.forEach(function (o) { var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; s.appendChild(el('option', { value: v }, l)); }); if (def != null) s.value = def; return s; }
+
+  // ----------------------------------------------------- Alta de registros
+  function abrirFormEvento(invPrefill) {
+    var cont = el('div', { class: 'form-grid' });
+    var picker = buildEquipoPicker(invPrefill || null);
+    cont.appendChild(el('div', { class: 'field col-full' }, [el('label', {}, 'Equipo'), picker.wrap]));
+    var selTipo = selectDe((H.TIPOS_EVENTO || []).map(function (t) { return t.label; }));
+    cont.appendChild(field('Tipo de evento', selTipo));
+    var inFecha = el('input', { type: 'date' }); inFecha.value = hoyISO();
+    cont.appendChild(field('Fecha', inFecha));
+    var selEjec = selectDe([['', '— Ejecutor —']].concat((H.EJECUTORES || []).map(function (x) { return [x, x]; })));
+    cont.appendChild(field('Ejecutor', selEjec));
+    var inFolio = el('input', { type: 'text', placeholder: 'Folio (si aplica)' });
+    var fFolio = field('Folio', inFolio); cont.appendChild(fFolio);
+    var selRes = selectDe(RESULTADOS_MP); var fRes = field('Resultado MP', selRes); fRes.style.display = 'none'; cont.appendChild(fRes);
+    var selEstSi = selectDe([['operativo', 'Operativo'], ['no_operativo', 'No operativo'], ['en_servicio_tecnico', 'En servicio técnico'], ['baja', 'Baja']]);
+    var fEstSi = field('Estado si resultado «Si»', selEstSi); fEstSi.style.display = 'none'; cont.appendChild(fEstSi);
+    var inObs = el('textarea', { rows: '2', placeholder: 'Observaciones…' }); cont.appendChild(fieldFull('Observaciones', inObs));
+    var cbOf = el('input', { type: 'checkbox' });
+    cont.appendChild(el('div', { class: 'field col-full' }, [el('label', { style: 'display:flex;gap:8px;align-items:center' }, [cbOf, document.createTextNode(' Registro oficial')])]));
+    function toggleMP() { var mp = selTipo.value === 'Mantención preventiva'; fRes.style.display = mp ? '' : 'none'; fEstSi.style.display = mp ? '' : 'none'; fFolio.style.display = mp ? 'none' : ''; }
+    selTipo.addEventListener('change', toggleMP); toggleMP();
+    var actions = el('div', { class: 'form-actions' });
+    var bg = el('button', { class: 'btn btn-primary' }, '➕ Registrar evento');
+    bg.onclick = function () {
+      var inv = picker.get(); if (!inv) { toast('Selecciona un equipo.', 'err'); return; }
+      var d = { inv: inv, tipo: selTipo.value, fecha: inFecha.value, ejecutor: selEjec.value || null, obs: inObs.value.trim() || null, oficial: cbOf.checked ? 'Si' : 'No' };
+      if (selTipo.value === 'Mantención preventiva') { d.resultado = selRes.value; d.mpEstadoSi = selEstSi.value; }
+      else if (inFolio.value.trim()) d.folio = inFolio.value.trim();
+      var r = H.crearEvento(d);
+      if (r && r.requiereConfirmacion) { if (window.confirm(r.aviso + '\n\n¿Registrar de todos modos?')) { d.forzarSinProg = true; r = H.crearEvento(d); } else return; }
+      if (r && r.ok) { toast('Evento registrado.', 'ok'); closeModal(); render(); }
+      else toast((r && r.error) || 'No se pudo registrar.', 'err');
+    };
+    actions.appendChild(bg);
+    var box = el('div'); box.appendChild(cont); box.appendChild(actions); openModal('➕ Registrar evento', box);
+  }
+
+  function abrirFormPendiente(invPrefill) {
+    var cont = el('div', { class: 'form-grid' });
+    var picker = buildEquipoPicker(invPrefill || null);
+    cont.appendChild(el('div', { class: 'field col-full' }, [el('label', {}, 'Equipo'), picker.wrap]));
+    var selTipo = selectDe(Object.keys(H.TIPO_PENDIENTE).map(function (k) { return [k, H.TIPO_PENDIENTE[k]]; }));
+    cont.appendChild(field('Tipo', selTipo));
+    var selEjec = selectDe([['', '— Responsable —']].concat((H.EJECUTORES || []).map(function (x) { return [x, x]; })));
+    cont.appendChild(field('Responsable', selEjec));
+    var inComp = el('input', { type: 'date' }); cont.appendChild(field('Fecha compromiso', inComp));
+    var inDesc = el('textarea', { rows: '2', placeholder: 'Descripción del pendiente…' }); cont.appendChild(fieldFull('Descripción', inDesc));
+    var actions = el('div', { class: 'form-actions' });
+    var bg = el('button', { class: 'btn btn-primary' }, '➕ Crear pendiente');
+    bg.onclick = function () {
+      var inv = picker.get(); if (!inv) { toast('Selecciona un equipo.', 'err'); return; }
+      var r = H.crearPendiente({ inv: inv, tipo: selTipo.value, ejecutor: selEjec.value || null, fechaComp: inComp.value || null, desc: inDesc.value.trim() });
+      if (r && r.ok) { toast('Pendiente creado.', 'ok'); closeModal(); render(); } else toast((r && r.error) || 'No se pudo crear.', 'err');
+    };
+    actions.appendChild(bg); var box = el('div'); box.appendChild(cont); box.appendChild(actions); openModal('⚠️ Nuevo pendiente', box);
+  }
+
+  function abrirFormCiclo(invPrefill) {
+    var cont = el('div', { class: 'form-grid' });
+    var picker = buildEquipoPicker(invPrefill || null);
+    cont.appendChild(el('div', { class: 'field col-full' }, [el('label', {}, 'Equipo'), picker.wrap]));
+    var inFolio = el('input', { type: 'text', placeholder: 'Folio (opcional)' }); cont.appendChild(field('Folio', inFolio));
+    var inFecha = el('input', { type: 'date' }); inFecha.value = hoyISO(); cont.appendChild(field('Fecha de apertura', inFecha));
+    var selIng = selectDe([['', '— Ingeniero —']].concat((H.EJECUTORES || []).map(function (x) { return [x, x]; }))); cont.appendChild(field('Ingeniero asignado', selIng));
+    var inDesc = el('textarea', { rows: '2', placeholder: 'Descripción inicial…' }); cont.appendChild(fieldFull('Descripción', inDesc));
+    var actions = el('div', { class: 'form-actions' });
+    var bg = el('button', { class: 'btn btn-primary' }, '🔁 Abrir ciclo');
+    bg.onclick = function () {
+      var inv = picker.get(); if (!inv) { toast('Selecciona un equipo.', 'err'); return; }
+      try { H.abrirCiclo(inFolio.value.trim() || null, inv, inFecha.value, selIng.value || null, inDesc.value.trim()); H.save(); toast('Ciclo abierto.', 'ok'); closeModal(); render(); }
+      catch (e) { toast('No se pudo abrir el ciclo.', 'err'); }
+    };
+    actions.appendChild(bg); var box = el('div'); box.appendChild(cont); box.appendChild(actions); openModal('🔁 Abrir ciclo correctivo', box);
+  }
+
+  // ------------------------------------------------------- Cumplimiento / SLA
+  function renderCumplimiento() {
+    setTitulo('📈 Cumplimiento / SLA', 'Análisis de tiempos de pendientes y ciclos');
+    configurarExport('Exportar inventario', exportarInventarioTodo);
+    contentEl.innerHTML = '';
+    var a = H.analisisTiempos();
+    function bloque(titulo, d) {
+      var card = el('div', { class: 'card' });
+      card.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, titulo)]));
+      var body = el('div', { class: 'card-body' });
+      var sg = el('div', { class: 'stat-grid' });
+      function s(n, l, acc) { return el('div', { class: 'stat' + (acc ? ' accent' : '') }, [el('div', { class: 'n' }, String(n)), el('div', { class: 'l' }, l)]); }
+      sg.appendChild(s(d.abiertos, 'Abiertos'));
+      sg.appendChild(s(d.cerrados, 'Cerrados', true));
+      sg.appendChild(s(d.promCierre == null ? '—' : d.promCierre, 'Prom. cierre (días)'));
+      sg.appendChild(s(d.aging.d30p, '> 30 días abiertos'));
+      body.appendChild(sg);
+      body.appendChild(el('div', { class: 'hint' }, 'Antigüedad de abiertos: ≤7d ' + d.aging.d7 + ' · ≤14d ' + d.aging.d14 + ' · ≤30d ' + d.aging.d30 + ' · >30d ' + d.aging.d30p));
+      card.appendChild(body); return card;
+    }
+    contentEl.appendChild(bloque('Pendientes', a.pend));
+    contentEl.appendChild(bloque('Ciclos correctivos', a.ciclos));
+    var c1 = el('div', { class: 'card' }); c1.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, 'Carga por ejecutor')]));
+    var b1 = el('div', { class: 'card-body' }); var w1 = el('div', { class: 'tabla-wrap' }); var t1 = el('table', { class: 'data' });
+    t1.appendChild(el('thead', {}, el('tr', {}, [th('Ejecutor'), th('Abiertos'), th('Cerrados'), th('Prom. cierre (d)'), th('Edad prom. (d)')])));
+    var tb1 = el('tbody'); (a.porEjecutor || []).slice().sort(function (x, y) { return (y.abiertos + y.cerrados) - (x.abiertos + x.cerrados); }).forEach(function (e) {
+      tb1.appendChild(el('tr', {}, [td(e.ejecutor), td(String(e.abiertos)), td(String(e.cerrados)), td(e.promCierre == null ? '—' : String(e.promCierre)), td(e.edadProm == null ? '—' : String(e.edadProm))]));
+    });
+    t1.appendChild(tb1); w1.appendChild(t1); b1.appendChild(w1); c1.appendChild(b1); contentEl.appendChild(c1);
+    if (a.porTipo && a.porTipo.length) {
+      var c2 = el('div', { class: 'card' }); c2.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, 'Tiempos por tipo de evento')]));
+      var b2 = el('div', { class: 'card-body' }); var w2 = el('div', { class: 'tabla-wrap' }); var t2 = el('table', { class: 'data' });
+      t2.appendChild(el('thead', {}, el('tr', {}, [th('Tipo'), th('N°'), th('Prom. (días)')])));
+      var tb2 = el('tbody'); a.porTipo.forEach(function (t) { tb2.appendChild(el('tr', {}, [td(t.tipo), td(String(t.n)), td(String(t.prom))])); });
+      t2.appendChild(tb2); w2.appendChild(t2); b2.appendChild(w2); c2.appendChild(b2); contentEl.appendChild(c2);
+    }
+  }
+
+  // ------------------------------------------------------------- Auditoría
+  function fmtTs(ts) { if (!ts) return ''; var d = new Date(ts); if (isNaN(d)) return ts; var z = function (n) { return String(n).padStart(2, '0'); }; return z(d.getDate()) + '-' + z(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()); }
+  function renderAuditoria() {
+    setTitulo('🧾 Auditoría', 'Trazabilidad de cambios del sistema');
+    configurarExport('Exportar auditoría', function () { var aoa = [['Fecha/hora', 'Usuario', 'Entidad', 'ID', 'Campo', 'Anterior', 'Nuevo']]; (H.getState().audit || []).slice().reverse().forEach(function (a) { aoa.push([fmtTs(a.ts), a.usuario, a.entidad, a.idEnt, a.campo, a.valorAnterior, a.valorNuevo]); }); exportarAOA('Auditoria', aoa); toast('Auditoría exportada.', 'ok'); });
+    contentEl.innerHTML = '';
+    var lista = (H.getState().audit || []).slice().reverse();
+    var card = el('div', { class: 'card' }); var body = el('div', { class: 'card-body' });
+    var toolbar = el('div', { class: 'toolbar' }); var search = el('input', { type: 'search', placeholder: 'Buscar en auditoría…' }); toolbar.appendChild(search); toolbar.appendChild(el('div', { class: 'spacer' })); var note = el('span', { class: 'count-note' }); toolbar.appendChild(note); body.appendChild(toolbar);
+    var cont = el('div'); body.appendChild(cont);
+    function pintar() {
+      var q = search.value.trim().toLowerCase();
+      var rows = lista.filter(function (a) { if (!q) return true; return ((a.entidad || '') + ' ' + (a.campo || '') + ' ' + (a.valorAnterior || '') + ' ' + (a.valorNuevo || '') + ' ' + (a.usuario || '')).toLowerCase().indexOf(q) >= 0; });
+      note.textContent = rows.length + ' registro(s)';
+      cont.innerHTML = '';
+      if (!rows.length) { cont.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '🧾'), el('div', {}, 'Sin registros de auditoría.')])); return; }
+      var wrap = el('div', { class: 'tabla-wrap' }); var t = el('table', { class: 'data' });
+      t.appendChild(el('thead', {}, el('tr', {}, [th('Fecha/hora'), th('Usuario'), th('Entidad'), th('ID'), th('Campo'), th('Anterior'), th('Nuevo')])));
+      var tb = el('tbody'); rows.slice(0, 800).forEach(function (a) { tb.appendChild(el('tr', {}, [td(fmtTs(a.ts)), td(a.usuario || '—'), td(a.entidad || '—'), td(String(a.idEnt == null ? '' : a.idEnt)), td(a.campo || '—'), td(a.valorAnterior == null ? '—' : String(a.valorAnterior)), td(a.valorNuevo == null ? '—' : String(a.valorNuevo))])); });
+      t.appendChild(tb); wrap.appendChild(t); cont.appendChild(wrap);
+    }
+    search.addEventListener('input', pintar); pintar(); card.appendChild(body); contentEl.appendChild(card);
+  }
+
+  // ----------------------------------------------------------- Configuración
+  function descargarRespaldo() {
+    try { var blob = new Blob([JSON.stringify(H.getState(), null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = el('a', { href: url, download: 'Respaldo_Equipos_' + hoyISO() + '.json' }); document.body.appendChild(a); a.click(); setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); toast('Respaldo descargado.', 'ok'); }
+    catch (e) { toast('No se pudo respaldar.', 'err'); }
+  }
+  function restaurarRespaldo() {
+    var inp = el('input', { type: 'file', accept: '.json,application/json' });
+    inp.onchange = function () {
+      var f = inp.files[0]; if (!f) return; var rd = new FileReader();
+      rd.onload = function () {
+        try {
+          var data = JSON.parse(rd.result);
+          if (!data.equipos || !data.eventos) throw new Error('Archivo no válido');
+          if (!window.confirm('Esto reemplazará los datos actuales por los del respaldo. ¿Continuar?')) return;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); location.reload();
+        } catch (e) { toast('No se pudo restaurar: ' + e.message, 'err'); }
+      };
+      rd.readAsText(f);
+    };
+    inp.click();
+  }
+  function renderConfig() {
+    setTitulo('⚙️ Configuración', 'Ejecutores, datos y respaldo');
+    configurarExport('Exportar inventario', exportarInventarioTodo);
+    contentEl.innerHTML = '';
+    var c1 = el('div', { class: 'card' });
+    c1.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '👷 Ejecutores'), el('span', { class: 'desc' }, 'Catálogo del núcleo (referencia)')]));
+    var b1 = el('div', { class: 'card-body' }); var chips = el('div', { class: 'chips' });
+    (H.EJECUTORES || []).forEach(function (x) { chips.appendChild(el('div', { class: 'chip' }, [el('span', {}, x)])); });
+    b1.appendChild(chips); c1.appendChild(b1); contentEl.appendChild(c1);
+
+    var st = H.getState();
+    var c3 = el('div', { class: 'card' });
+    c3.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '💾 Datos y respaldo'), el('span', { class: 'desc' }, st.equipos.length + ' equipos · ' + st.eventos.length + ' eventos · ' + st.pendientes.length + ' pendientes · ' + (st.ciclos || []).length + ' ciclos')]));
+    var b3 = el('div', { class: 'card-body' });
+    var raw = ''; try { raw = localStorage.getItem(STORAGE_KEY) || ''; } catch (e) { }
+    b3.appendChild(el('div', { class: 'hint' }, 'Los datos se guardan localmente (comprimidos) en este navegador. Uso aproximado: ' + Math.round(raw.length * 2 / 1024) + ' KB. Use el respaldo para trasladarlos a otro equipo.'));
+    var actions = el('div', { class: 'form-actions' });
+    var bExp = el('button', { class: 'btn btn-success' }, '⬇️ Exportar a Excel'); bExp.onclick = exportarInventarioTodo;
+    var bBk = el('button', { class: 'btn' }, '🗄️ Descargar respaldo (JSON)'); bBk.onclick = descargarRespaldo;
+    var bRe = el('button', { class: 'btn' }, '📤 Restaurar respaldo (JSON)'); bRe.onclick = restaurarRespaldo;
+    var bRs = el('button', { class: 'btn btn-danger' }, '🗑️ Restablecer al estado inicial'); bRs.onclick = function () { if (!window.confirm('¿Restablecer todos los datos al estado inicial (semilla)? Esta acción no se puede deshacer. Se recomienda respaldar antes.')) return; try { localStorage.removeItem(STORAGE_KEY); } catch (e) { } window.location.reload(); };
+    actions.appendChild(bExp); actions.appendChild(bBk); actions.appendChild(bRe); actions.appendChild(bRs);
+    b3.appendChild(actions); c3.appendChild(b3); contentEl.appendChild(c3);
   }
 
   // ---------------------------------------------------------------- Modal
