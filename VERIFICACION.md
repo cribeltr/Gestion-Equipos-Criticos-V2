@@ -73,7 +73,26 @@ como nota de calidad de datos:
 Conviene depurarlos en la fuente (`Listado_de_equipos_Criticos.xlsx`) antes de
 regenerar `equipos.js`.
 
-## 5. Cómo reproducir las pruebas
+## 5. Funciones solicitadas (segunda iteración)
+
+1. **Tablero de estado en el panel izquierdo.** Nuevo grupo **«Estado de equipos»**
+   con vistas **En servicio técnico**, **Operativos**, **No operativos**,
+   **Pendientes** y **Desconocido**, cada una con su contador en vivo. Cada vista
+   lista solo los equipos en ese estado; **al cambiar de estado, un equipo
+   desaparece automáticamente de la vista** (el estado se recalcula desde el
+   último evento). Las tarjetas del inventario y el desplegable de estado quedan
+   sincronizados con estas vistas.
+2. **Pendientes gestionables** desde el propio panel: el ítem «Pendientes» abre la
+   vista de gestión (crear, cambiar estado en línea, tareas, bitácora y eliminar).
+3. **Validación de fecha en Mantención Preventiva.** Al guardar una MP, si la
+   **fecha no corresponde al mes programado** (o el año no coincide), la app **lo
+   indica** y pide confirmación antes de guardar.
+
+Pruebas automatizadas de esta iteración: **16/16** (incluye el caso de que un
+equipo sale de «En servicio técnico» y pasa a «Operativos» al cerrar el ciclo, y
+el aviso de desajuste fecha/mes en MP).
+
+## 6. Cómo reproducir las pruebas
 
 No se requieren dependencias para usar la app (basta abrir `index.html`). Para
 las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:

@@ -201,14 +201,23 @@
 
   var GRUPOS_NAV = [
     { label: 'Inicio', items: ['__dashboard', '__inventario'] },
+    { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__pendientes', '__est_desconocido'] },
     { label: 'Solicitud', items: ['solicitud'] },
     { label: 'Vía A · Servicio técnico', items: ['envio', 'estado_st', 'recepcion'] },
     { label: 'Vía B · En sitio', items: ['diagnostico'] },
     { label: 'Subflujo comercial', items: ['cotizacion', 'gestion_oc', 'emision_oc'] },
     { label: 'Cierre del ciclo', items: ['reparacion', 'cierre'] },
     { label: 'Mantención preventiva', items: ['__mp_import', 'mp'] },
-    { label: 'Gestión', items: ['__pendientes', '__todos', '__config'] }
+    { label: 'Gestión', items: ['__todos', '__config'] }
   ];
+
+  // Vistas del tablero de estado: cada una filtra el inventario al estado dado.
+  var ESTADO_VIEWS = {
+    '__est_st': 'Servicio técnico',
+    '__est_operativo': 'Operativo',
+    '__est_no_operativo': 'No operativo',
+    '__est_desconocido': 'Desconocido'
+  };
 
   var EQUIPOS_BASE = window.EQUIPOS || [];
 
@@ -597,6 +606,7 @@
     renderSidebar();
     if (STATE.view === '__dashboard') renderDashboard();
     else if (STATE.view === '__inventario') renderInventario();
+    else if (ESTADO_VIEWS[STATE.view]) renderInventario(ESTADO_VIEWS[STATE.view]);
     else if (STATE.view === '__mp_import') renderMPImport();
     else if (STATE.view === '__pendientes') renderPendientes();
     else if (STATE.view === '__todos') renderTodos();
@@ -608,14 +618,22 @@
     var nav = document.getElementById('nav');
     nav.innerHTML = '';
     var cerrados = foliosCerrados();
+    // Conteos por estado (en vivo) para el tablero de estado del panel izquierdo.
+    var invCalc = calcInventario();
+    var estCount = { 'Operativo': 0, 'No operativo': 0, 'Servicio técnico': 0, 'Desconocido': 0 }, conEventos = 0;
+    invCalc.forEach(function (x) { estCount[x.estado] = (estCount[x.estado] || 0) + 1; if (x.n > 0) conEventos++; });
     GRUPOS_NAV.forEach(function (g) {
       nav.appendChild(el('div', { class: 'group-label' }, g.label));
       g.items.forEach(function (id) {
         var label, icono, badge = null, badgeTitle = null;
         if (id === '__dashboard') { label = 'Resumen'; icono = '📊'; }
-        else if (id === '__inventario') { label = 'Inventario de equipos'; icono = '🩺'; badge = Object.keys(buildEquipoIndex()).length; }
+        else if (id === '__inventario') { label = 'Inventario de equipos'; icono = '🩺'; badge = conEventos; badgeTitle = 'equipos con eventos'; }
+        else if (id === '__est_st') { label = 'En servicio técnico'; icono = '🛠️'; badge = estCount['Servicio técnico']; badgeTitle = 'equipos en este estado'; }
+        else if (id === '__est_operativo') { label = 'Operativos'; icono = '✅'; badge = estCount['Operativo']; badgeTitle = 'equipos en este estado'; }
+        else if (id === '__est_no_operativo') { label = 'No operativos'; icono = '⛔'; badge = estCount['No operativo']; badgeTitle = 'equipos en este estado'; }
+        else if (id === '__est_desconocido') { label = 'Desconocido'; icono = '❔'; badge = estCount['Desconocido']; badgeTitle = 'equipos sin eventos'; }
         else if (id === '__mp_import') { label = 'Importar programación MP'; icono = '📥'; }
-        else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'Pendientes sin resolver'; }
+        else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'pendientes sin resolver'; }
         else if (id === '__todos') { label = 'Todos los registros'; icono = '🗂️'; badge = totalRegistros(); }
         else if (id === '__config') { label = 'Configuración'; icono = '⚙️'; }
         else {
@@ -877,8 +895,18 @@
     return el('span', { class: cls }, estado);
   }
 
-  function renderInventario() {
-    setTitulo('🩺 Inventario de equipos', getEquipos().length + ' equipos críticos · estado según el último evento');
+  // Mapa estado -> vista del tablero de estado (panel izquierdo).
+  var EST_VIEW = { 'Operativo': '__est_operativo', 'No operativo': '__est_no_operativo', 'Servicio técnico': '__est_st', 'Desconocido': '__est_desconocido' };
+
+  function renderInventario(estadoForzado) {
+    var titulos = {
+      'Servicio técnico': ['🛠️ Equipos en servicio técnico', 'Equipos cuyo último evento indica que están en servicio técnico'],
+      'Operativo': ['✅ Equipos operativos', 'Equipos cuyo último evento indica que están operativos'],
+      'No operativo': ['⛔ Equipos no operativos', 'Equipos cuyo último evento indica que están no operativos'],
+      'Desconocido': ['❔ Equipos sin eventos', 'Equipos sin ningún evento registrado (estado desconocido)']
+    };
+    if (estadoForzado && titulos[estadoForzado]) setTitulo(titulos[estadoForzado][0], titulos[estadoForzado][1]);
+    else setTitulo('🩺 Inventario de equipos', getEquipos().length + ' equipos críticos · estado según el último evento');
     contentEl.innerHTML = '';
 
     var inv = calcInventario();
@@ -886,15 +914,22 @@
     inv.forEach(function (x) { counts[x.estado] = (counts[x.estado] || 0) + 1; });
 
     var stats = el('div', { class: 'stat-grid' });
-    function st(n, l, accent) { return el('div', { class: 'stat' + (accent ? ' accent' : '') }, [el('div', { class: 'n' }, String(n)), el('div', { class: 'l' }, l)]); }
-    stats.appendChild(st(counts['Operativo'], 'Operativos', true));
-    stats.appendChild(st(counts['No operativo'], 'No operativos'));
-    stats.appendChild(st(counts['Servicio técnico'], 'En servicio técnico'));
-    stats.appendChild(st(counts['Desconocido'], 'Desconocido (sin eventos)'));
+    function st(n, l, estado, accent) {
+      var box = el('div', { class: 'stat' + (accent ? ' accent' : '') + (estado ? ' row-click' : ''), title: estado ? ('Ver equipos: ' + l) : null },
+        [el('div', { class: 'n' }, String(n)), el('div', { class: 'l' }, l)]);
+      if (estado) box.onclick = function () { navegar(EST_VIEW[estado]); };
+      return box;
+    }
+    stats.appendChild(st(counts['Operativo'], 'Operativos', 'Operativo', true));
+    stats.appendChild(st(counts['No operativo'], 'No operativos', 'No operativo'));
+    stats.appendChild(st(counts['Servicio técnico'], 'En servicio técnico', 'Servicio técnico'));
+    stats.appendChild(st(counts['Desconocido'], 'Desconocido (sin eventos)', 'Desconocido'));
     contentEl.appendChild(stats);
 
     contentEl.appendChild(el('div', { class: 'banner' },
-      'El estado se calcula automáticamente a partir del último evento registrado de cada equipo. ' +
+      (estadoForzado
+        ? ('Mostrando solo los equipos en estado «' + estadoForzado + '». Al cambiar de estado, un equipo deja de aparecer aquí automáticamente. ')
+        : 'El estado se calcula automáticamente a partir del último evento registrado de cada equipo. ') +
       'Haga clic en una fila para ver la ficha del equipo y todos sus registros.'));
 
     var card = el('div', { class: 'card' });
@@ -902,9 +937,10 @@
 
     var toolbar = el('div', { class: 'toolbar' });
     var search = el('input', { type: 'search', placeholder: 'Buscar por inventario, equipo, serie, marca, servicio, ubicación…' });
-    var selEstado = el('select');
+    var selEstado = el('select', { 'aria-label': 'Filtrar por estado' });
     [['', 'Todos los estados'], ['Operativo', 'Operativo'], ['No operativo', 'No operativo'], ['Servicio técnico', 'En servicio técnico'], ['Desconocido', 'Desconocido']]
       .forEach(function (o) { selEstado.appendChild(el('option', { value: o[0] }, o[1])); });
+    if (estadoForzado) selEstado.value = estadoForzado;
     toolbar.appendChild(search);
     toolbar.appendChild(selEstado);
     toolbar.appendChild(el('div', { class: 'spacer' }));
@@ -970,7 +1006,11 @@
       cont.appendChild(wrap);
     }
     search.addEventListener('input', pintar);
-    selEstado.addEventListener('change', pintar);
+    // El desplegable navega a la vista de estado correspondiente (sincroniza panel y título).
+    selEstado.addEventListener('change', function () {
+      var v = selEstado.value;
+      navegar(v && EST_VIEW[v] ? EST_VIEW[v] : '__inventario');
+    });
     pintar();
 
     card.appendChild(body);
@@ -1376,6 +1416,10 @@
     btnGuardar.onclick = function () {
       try {
         var rec = collectForm(etapa, form.controls);
+        if (id === 'mp') {
+          var aviso = validarFechaMesMP(rec);
+          if (aviso && !confirm(aviso + '\n\n¿Desea guardar de todos modos?')) return;
+        }
         if (editando) {
           rec._id = editando._id; rec._stage = id; rec._createdAt = editando._createdAt; rec._updatedAt = new Date().toISOString();
           // Conserva la gestión del evento (tareas y bitácora) al editar sus campos.
@@ -1983,6 +2027,27 @@
     return anio + '-' + String(n).padStart(2, '0') + '-01';
   }
   function mpKey(r) { return [r.equipo && r.equipo.inv, r.anio, r.mes, r.tipo].join('|'); }
+
+  // Valida que la fecha de una mantención preventiva concuerde con el mes (y año)
+  // programado. Devuelve un mensaje de aviso, o '' si todo coincide.
+  function validarFechaMesMP(rec) {
+    if (!rec || !rec.fecha) return '';
+    var MES = (window.EventosMP && window.EventosMP.MESES) || ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    var mFecha = parseInt(String(rec.fecha).slice(5, 7), 10);   // 1..12
+    var yFecha = String(rec.fecha).slice(0, 4);
+    var avisos = [];
+    if (rec.mes) {
+      var mProg = window.EventosMP ? window.EventosMP.mesANumero(rec.mes) : 0;
+      if (mProg && mFecha && mFecha !== mProg) {
+        avisos.push('La fecha indicada corresponde a ' + (MES[mFecha - 1] || ('mes ' + mFecha)) +
+          ', pero el mes programado es «' + rec.mes + '».');
+      }
+    }
+    if (rec.anio && yFecha && String(rec.anio).trim() !== yFecha) {
+      avisos.push('El año de la fecha (' + yFecha + ') no coincide con el año programado (' + rec.anio + ').');
+    }
+    return avisos.join('\n');
+  }
 
   // Importa eventos como registros MP (sin guardar/navegar); devuelve conteos.
   function importarEventosMP(events, year) {
