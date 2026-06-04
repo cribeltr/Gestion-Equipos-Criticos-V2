@@ -282,6 +282,7 @@ table.data td.acciones { white-space: nowrap; }
 .pill-no { background: #fbe7e4; color: #a12f20; }
 .pill-st { background: #eae6f7; color: #56409a; }
 .pill-gray { background: #eef1f3; color: #5a6570; }
+.pill-baja { background: #2c3a45; color: #fff; }
 
 /* ---------- Dashboard ---------- */
 .stat-grid {

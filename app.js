@@ -83,7 +83,7 @@
         { key: 'fecha', label: 'Fecha de recepción', tipo: 'fecha', req: true, ancho: 14 },
         { key: 'numero_guia', label: 'N° de guía de despacho', tipo: 'text', ancho: 18 },
         { key: 'tecnico', label: 'Técnico (recibe)', tipo: 'tecnico', ancho: 24 },
-        { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['Operativo', 'No operativo'], ancho: 16 },
+        { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['Operativo', 'No operativo', 'Baja'], ancho: 16 },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
       ]
     },
@@ -96,7 +96,7 @@
         { key: 'equipo', label: 'Equipo (listado crítico)', tipo: 'equipo', col: 'full' },
         { key: 'fecha', label: 'Fecha de diagnóstico', tipo: 'fecha', req: true, ancho: 14 },
         { key: 'tecnico', label: 'Técnico', tipo: 'tecnico', req: true, ancho: 24 },
-        { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['No operativo', 'Operativo'], def: 'No operativo', ancho: 16 },
+        { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['No operativo', 'Operativo', 'Baja'], def: 'No operativo', ancho: 16 },
         { key: 'observaciones', label: 'Resultado / observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
       ]
     },
@@ -149,7 +149,7 @@
         { key: 'equipo', label: 'Equipo (listado crítico)', tipo: 'equipo', col: 'full' },
         { key: 'fecha', label: 'Fecha de reparación', tipo: 'fecha', req: true, ancho: 14 },
         { key: 'tecnico', label: 'Técnico', tipo: 'tecnico', req: true, ancho: 24 },
-        { key: 'resultado', label: 'Resultado', tipo: 'select', req: true, opciones: ['Operativo', 'No operativo'], ancho: 16 },
+        { key: 'resultado', label: 'Resultado', tipo: 'select', req: true, opciones: ['Operativo', 'No operativo', 'Baja'], ancho: 16 },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
       ]
     },
@@ -161,7 +161,7 @@
         { key: 'folio', label: 'Solicitud de trabajo (folio)', tipo: 'folio_ref', ancho: 14 },
         { key: 'equipo', label: 'Equipo (listado crítico)', tipo: 'equipo', col: 'full' },
         { key: 'fecha', label: 'Fecha de cierre', tipo: 'fecha', req: true, ancho: 14 },
-        { key: 'estado_final', label: 'Estado final', tipo: 'select', opciones: ['Operativo', 'No operativo'], def: 'Operativo', ancho: 16 },
+        { key: 'estado_final', label: 'Estado final', tipo: 'select', opciones: ['Operativo', 'No operativo', 'Baja'], def: 'Operativo', ancho: 16 },
         { key: 'tecnico', label: 'Técnico', tipo: 'tecnico', ancho: 24 },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
       ]
@@ -201,7 +201,7 @@
 
   var GRUPOS_NAV = [
     { label: 'Inicio', items: ['__dashboard', '__inventario'] },
-    { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__pendientes', '__est_desconocido'] },
+    { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__est_baja', '__pendientes', '__est_desconocido'] },
     { label: 'Mantención preventiva', items: ['__mp_import', 'mp'] },
     { label: 'Gestión', items: ['__todos', '__config'] }
   ];
@@ -216,6 +216,7 @@
     '__est_st': 'Servicio técnico',
     '__est_operativo': 'Operativo',
     '__est_no_operativo': 'No operativo',
+    '__est_baja': 'Baja',
     '__est_desconocido': 'Desconocido'
   };
 
@@ -629,7 +630,8 @@
     else if (key === 'tipo_compra') cls = 'pill pill-via-a';
     else { // estado_equipo, estado_final, resultado (incl. resultados MP: Si/No/Baja/C1..C8/Pendiente/NU)
       if (/^(operativo|si|reparado)$/i.test(v)) cls = 'pill pill-ok';
-      else if (/no operativo|^no$|^baja$|^c3$/i.test(v)) cls = 'pill pill-no';
+      else if (/^baja$/i.test(v)) cls = 'pill pill-baja';
+      else if (/no operativo|^no$|^c3$/i.test(v)) cls = 'pill pill-no';
       else if (/servicio|^c2$/i.test(v)) cls = 'pill pill-st';
       else cls = 'pill pill-gray'; // Pendiente, NU, C1, C4..C8
     }
@@ -669,7 +671,7 @@
     var cerrados = foliosCerrados();
     // Conteos por estado (en vivo) para el tablero de estado del panel izquierdo.
     var invCalc = calcInventario();
-    var estCount = { 'Operativo': 0, 'No operativo': 0, 'Servicio técnico': 0, 'Desconocido': 0 }, conEventos = 0;
+    var estCount = { 'Operativo': 0, 'No operativo': 0, 'Servicio técnico': 0, 'Baja': 0, 'Desconocido': 0 }, conEventos = 0;
     invCalc.forEach(function (x) { estCount[x.estado] = (estCount[x.estado] || 0) + 1; if (x.n > 0) conEventos++; });
     GRUPOS_NAV.forEach(function (g) {
       nav.appendChild(el('div', { class: 'group-label' }, g.label));
@@ -680,6 +682,7 @@
         else if (id === '__est_st') { label = 'En servicio técnico'; icono = '🛠️'; badge = estCount['Servicio técnico']; badgeTitle = 'equipos en este estado'; }
         else if (id === '__est_operativo') { label = 'Operativos'; icono = '✅'; badge = estCount['Operativo']; badgeTitle = 'equipos en este estado'; }
         else if (id === '__est_no_operativo') { label = 'No operativos'; icono = '⛔'; badge = estCount['No operativo']; badgeTitle = 'equipos en este estado'; }
+        else if (id === '__est_baja') { label = 'Baja'; icono = '🚫'; badge = estCount['Baja']; badgeTitle = 'equipos dados de baja'; }
         else if (id === '__est_desconocido') { label = 'Desconocido'; icono = '❔'; badge = estCount['Desconocido']; badgeTitle = 'equipos sin eventos'; }
         else if (id === '__mp_import') { label = 'Importar programación MP'; icono = '📥'; }
         else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'pendientes sin resolver'; }
@@ -887,6 +890,7 @@
 
   function normEstado(v) {
     if (!v) return null;
+    if (/baja/i.test(v)) return 'Baja';
     if (/no operativo/i.test(v)) return 'No operativo';
     if (/servicio/i.test(v)) return 'Servicio técnico';
     if (/operativo/i.test(v)) return 'Operativo';
@@ -941,18 +945,20 @@
   function estadoPill(estado) {
     var cls = estado === 'Operativo' ? 'pill pill-ok'
       : estado === 'No operativo' ? 'pill pill-no'
-        : estado === 'Servicio técnico' ? 'pill pill-st' : 'pill pill-gray';
+        : estado === 'Servicio técnico' ? 'pill pill-st'
+          : estado === 'Baja' ? 'pill pill-baja' : 'pill pill-gray';
     return el('span', { class: cls }, estado);
   }
 
   // Mapa estado -> vista del tablero de estado (panel izquierdo).
-  var EST_VIEW = { 'Operativo': '__est_operativo', 'No operativo': '__est_no_operativo', 'Servicio técnico': '__est_st', 'Desconocido': '__est_desconocido' };
+  var EST_VIEW = { 'Operativo': '__est_operativo', 'No operativo': '__est_no_operativo', 'Servicio técnico': '__est_st', 'Baja': '__est_baja', 'Desconocido': '__est_desconocido' };
 
   function renderInventario(estadoForzado) {
     var titulos = {
       'Servicio técnico': ['🛠️ Equipos en servicio técnico', 'Equipos cuyo último evento indica que están en servicio técnico'],
       'Operativo': ['✅ Equipos operativos', 'Equipos cuyo último evento indica que están operativos'],
       'No operativo': ['⛔ Equipos no operativos', 'Equipos cuyo último evento indica que están no operativos'],
+      'Baja': ['🚫 Equipos dados de baja', 'Equipos cuyo último evento indica que fueron dados de baja'],
       'Desconocido': ['❔ Equipos sin eventos', 'Equipos sin ningún evento registrado (estado desconocido)']
     };
     if (estadoForzado && titulos[estadoForzado]) setTitulo(titulos[estadoForzado][0], titulos[estadoForzado][1]);
@@ -960,7 +966,7 @@
     contentEl.innerHTML = '';
 
     var inv = calcInventario();
-    var counts = { 'Operativo': 0, 'No operativo': 0, 'Servicio técnico': 0, 'Desconocido': 0 };
+    var counts = { 'Operativo': 0, 'No operativo': 0, 'Servicio técnico': 0, 'Baja': 0, 'Desconocido': 0 };
     inv.forEach(function (x) { counts[x.estado] = (counts[x.estado] || 0) + 1; });
 
     var stats = el('div', { class: 'stat-grid' });
@@ -973,6 +979,7 @@
     stats.appendChild(st(counts['Operativo'], 'Operativos', 'Operativo', true));
     stats.appendChild(st(counts['No operativo'], 'No operativos', 'No operativo'));
     stats.appendChild(st(counts['Servicio técnico'], 'En servicio técnico', 'Servicio técnico'));
+    stats.appendChild(st(counts['Baja'], 'De baja', 'Baja'));
     stats.appendChild(st(counts['Desconocido'], 'Desconocido (sin eventos)', 'Desconocido'));
     contentEl.appendChild(stats);
 
@@ -988,7 +995,7 @@
     var toolbar = el('div', { class: 'toolbar' });
     var search = el('input', { type: 'search', placeholder: 'Buscar por inventario, equipo, serie, marca, servicio, ubicación…' });
     var selEstado = el('select', { 'aria-label': 'Filtrar por estado' });
-    [['', 'Todos los estados'], ['Operativo', 'Operativo'], ['No operativo', 'No operativo'], ['Servicio técnico', 'En servicio técnico'], ['Desconocido', 'Desconocido']]
+    [['', 'Todos los estados'], ['Operativo', 'Operativo'], ['No operativo', 'No operativo'], ['Servicio técnico', 'En servicio técnico'], ['Baja', 'Baja'], ['Desconocido', 'Desconocido']]
       .forEach(function (o) { selEstado.appendChild(el('option', { value: o[0] }, o[1])); });
     if (estadoForzado) selEstado.value = estadoForzado;
     toolbar.appendChild(search);
@@ -1501,6 +1508,7 @@
         if (id === 'mp') {
           var aviso = validarFechaMesMP(rec);
           if (aviso && !confirm(aviso + '\n\n¿Desea guardar de todos modos?')) return;
+          rec._origen = 'manual'; // MP creada/editada a mano: la importación no la sobrescribe
         }
         if (editando) {
           rec._id = editando._id; rec._stage = id; rec._createdAt = editando._createdAt; rec._updatedAt = new Date().toISOString();
@@ -2177,10 +2185,12 @@
   }
 
   // Importa eventos como registros MP (sin guardar/navegar); devuelve conteos.
+  // Solo crea/actualiza mantenciones provenientes de la importación: NO toca las
+  // mantenciones creadas o editadas a mano (marcadas con _origen === 'manual').
   function importarEventosMP(events, year) {
     var idx = {};
     DB.registros.mp.forEach(function (r) { idx[mpKey(r)] = r; });
-    var nuevos = 0, actualizados = 0;
+    var nuevos = 0, actualizados = 0, preservados = 0;
     (events || []).forEach(function (ev) {
       var equipo = { inv: ev[2], nombre: ev[3], servicio: ev[4], unidad: ev[5], ubicacion: ev[6], marca: ev[8], modelo: ev[9], serie: ev[10] };
       var mes = ev[13], tipo = ev[14], resultado = ev[15];
@@ -2188,23 +2198,26 @@
       var fecha = mpFecha(anio, mes);
       var key = [equipo.inv, anio, mes, tipo].join('|');
       var ex = idx[key];
-      if (ex) { ex.resultado = resultado; ex.fecha = fecha; ex.equipo = equipo; ex.anio = anio; ex._updatedAt = new Date().toISOString(); actualizados++; }
+      if (ex && ex._origen === 'manual') { preservados++; return; } // respeta lo registrado a mano
+      if (ex) { ex.resultado = resultado; ex.fecha = fecha; ex.equipo = equipo; ex.anio = anio; ex._origen = 'import'; ex._updatedAt = new Date().toISOString(); actualizados++; }
       else {
-        var rec = { _id: uid(), _stage: 'mp', _createdAt: new Date().toISOString(), equipo: equipo, fecha: fecha, anio: anio, mes: mes, tipo: tipo, resultado: resultado, observaciones: '', tareas: [], actualizaciones: [] };
+        var rec = { _id: uid(), _stage: 'mp', _origen: 'import', _createdAt: new Date().toISOString(), equipo: equipo, fecha: fecha, anio: anio, mes: mes, tipo: tipo, resultado: resultado, observaciones: '', tareas: [], actualizaciones: [] };
         DB.registros.mp.push(rec); idx[key] = rec; nuevos++;
       }
     });
-    return { nuevos: nuevos, actualizados: actualizados };
+    return { nuevos: nuevos, actualizados: actualizados, preservados: preservados };
   }
 
   // Acción principal del módulo MP: actualiza el inventario + importa las mantenciones.
   function actualizarEImportarMP() {
     if (!MP_STATE.events) { toast('Primero carga un archivo .xlsm.', 'err'); return; }
-    if (!confirm('Esto actualizará los datos de los equipos del inventario con los del Gantt y registrará las mantenciones preventivas (actualiza, no duplica). ¿Continuar?')) return;
+    if (!confirm('Se actualizarán SOLO el inventario y los resultados de las mantenciones preventivas (actualiza, no duplica).\n\nNO se modifican los pendientes ni los eventos registrados a mano en el programa (incluidas las mantenciones que hayas creado o editado manualmente).\n\n¿Continuar?')) return;
     var resEq = actualizarEquipos(MP_STATE.equipos || []);
     var resEv = importarEventosMP(MP_STATE.events, MP_STATE.year);
     guardarDB();
-    toast('Inventario: ' + resEq.actualizados + ' actualizados, ' + resEq.nuevos + ' nuevos · Mantenciones: ' + resEv.nuevos + ' nuevas, ' + resEv.actualizados + ' actualizadas.', 'ok');
+    var msg = 'Inventario: ' + resEq.actualizados + ' actualizados, ' + resEq.nuevos + ' nuevos · Mantenciones: ' + resEv.nuevos + ' nuevas, ' + resEv.actualizados + ' actualizadas';
+    if (resEv.preservados) msg += ', ' + resEv.preservados + ' preservadas (manuales)';
+    toast(msg + '.', 'ok');
     navegar('__inventario');
   }
 

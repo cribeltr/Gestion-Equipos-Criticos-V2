@@ -226,7 +226,7 @@
   // Estado físico que implica un evento MP según su resultado (null = no lo define).
   function estadoFromResultado(res) {
     if (res === 'Si') return 'Operativo';           // mantención realizada
-    if (res === 'Baja') return 'No operativo';       // equipo dado de baja
+    if (res === 'Baja') return 'Baja';               // equipo dado de baja
     if (res === 'C2') return 'Servicio técnico';     // en servicio técnico
     if (res === 'C3') return 'No operativo';         // no operativo a la espera de repuesto
     return null;
