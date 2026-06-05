@@ -631,11 +631,17 @@ select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 
 .equipo-fijo .ef-inv { font-weight: 700; color: var(--azul-osc); }
 .equipo-fijo .ef-nom { color: var(--gris-texto); }
 
-/* ---------- Grabación de sesión de uso ---------- */
-.btn.grabando { background: var(--rojo); border-color: var(--rojo); color: #fff; }
-.btn.grabando:hover { background: #a82418; }
-.btn.grabando::before {
-  content: ''; width: 9px; height: 9px; border-radius: 50%;
-  background: #fff; display: inline-block; animation: grabpulse 1s infinite;
-}
-@keyframes grabpulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+/* ---------- Chip de sincronización (Google Sheets) ---------- */
+.gs-chip { font-size: 12.5px; gap: 5px; }
+.gs-chip.gs-saving { color: var(--azul); }
+.gs-chip.gs-ok { color: var(--verde); border-color: #bfe3cf; background: #f1faf5; }
+.gs-chip.gs-err { color: var(--rojo); border-color: #f0c8c2; background: #fdf2f0; }
+.gs-chip.gs-off { color: var(--gris-texto); }
+
+/* ---------- Configuración: Google Sheets ---------- */
+.gs-card .gs-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.gs-card input[type=url] { flex: 1; min-width: 260px; border: 1px solid var(--gris-borde); border-radius: 6px; padding: 8px 10px; font: inherit; }
+.gs-pasos { font-size: 13px; margin: 6px 0 0; padding-left: 18px; }
+.gs-pasos li { margin: 4px 0; }
+.gs-code { position: relative; }
+.gs-code textarea { width: 100%; min-height: 150px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; border: 1px solid var(--gris-borde); border-radius: 8px; padding: 10px; white-space: pre; overflow: auto; }

@@ -269,12 +269,12 @@
       return esCuota ? 'cuota' : ('error:' + (e && e.message ? e.message : e));
     }
   }
-  // Libera almacenamiento NO esencial (grabación de uso y claves heredadas de
-  // versiones previas) para dejar sitio a la base de datos. No toca la BD ni el
-  // respaldo del usuario. Devuelve true si liberó algo.
+  // Libera almacenamiento NO esencial (claves heredadas de versiones previas)
+  // para dejar sitio a la base de datos. No toca la BD ni el respaldo del usuario.
+  // Devuelve true si liberó algo.
   function liberarEspacioNoEsencial() {
     var liberado = false;
-    ['gec_rec', 'hhha_v1_data', 'hhha_v1', 'gec_rec_bak'].forEach(function (k) {
+    ['gec_rec', 'hhha_v1_data', 'hhha_v1'].forEach(function (k) {
       if (k === STORAGE_KEY) return;
       try { if (localStorage.getItem(k) != null) { localStorage.removeItem(k); liberado = true; } } catch (e) { }
     });
@@ -292,14 +292,14 @@
     var payload = tieneLZ() ? (lzMark() + window.LZString.compressToUTF16(json)) : json;
 
     var r = intentarEscribirDB(payload);
-    if (r === 'ok') { _quotaAvisado = false; return true; }
+    if (r === 'ok') { _quotaAvisado = false; gsScheduleSync(); return true; }
     if (r.charAt(0) === 'e') { toast('No se pudo guardar localmente: ' + r.slice(6), 'err'); return false; }
 
     // Cuota excedida: liberar espacio no esencial y reintentar una vez.
     if (liberarEspacioNoEsencial() && intentarEscribirDB(payload) === 'ok') {
       _quotaAvisado = false;
-      if (REC.on) { REC.on = false; if (REC.timer) { clearInterval(REC.timer); REC.timer = null; } btnGrabRefrescar(); }
-      toast('Almacenamiento casi lleno: se descartó la grabación de uso para poder guardar. Descargue un respaldo y libere espacio.', 'warn');
+      gsScheduleSync();
+      toast('Almacenamiento casi lleno: se liberó espacio para poder guardar. Descargue un respaldo y libere espacio.', 'warn');
       return true;
     }
     if (!_quotaAvisado) {
@@ -428,129 +428,222 @@
     var cont = document.getElementById('toasts');
     var t = el('div', { class: 'toast ' + (tipo || '') }, msg);
     cont.appendChild(t);
-    grabLog('aviso', { mensaje: String(msg).slice(0, 140), tipo: tipo || '' });
     setTimeout(function () { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 2600);
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
   }
 
-  // ===================================================== Grabación de sesión
-  // Registra vistas, clics, cambios, avisos y errores con su tiempo, para
-  // descargar un JSON que sirva de telemetría de uso (mejorar el sistema).
-  var REC = { on: false, start: 0, eventos: [], lastView: null, timer: null, tick: 0 };
-  var REC_MAX = 9000, REC_KEY = 'gec_rec';
-  function grabLog(tipo, datos) {
-    if (!REC.on || REC.eventos.length >= REC_MAX) return;
-    var ev = { t: Date.now() - REC.start, ts: new Date().toISOString(), tipo: tipo };
-    if (datos) for (var k in datos) ev[k] = datos[k];
-    REC.eventos.push(ev);
+  // ============================================ Google Sheets (sincronización)
+  // Guarda la base en una Google Sheet mediante un "App web" de Apps Script.
+  //  - Guardar: POST (intenta CORS; desde file:// recurre a 'no-cors' a ciegas).
+  //  - Cargar / Probar: JSONP (etiqueta <script>) para evitar CORS desde file://.
+  // La copia local en localStorage se mantiene como caché; Google Sheets es el
+  // respaldo central. No se envían credenciales: el App web corre como el dueño.
+  function gsCfg() {
+    var c = DB.config.gs;
+    if (!c || typeof c !== 'object') c = DB.config.gs = { url: '', auto: false };
+    if (typeof c.url !== 'string') c.url = '';
+    c.auto = !!c.auto;
+    return c;
   }
-  function grabVista() {
-    if (!REC.on) return;
-    var v = STATE.view; if (v === REC.lastView) return;
-    REC.lastView = v;
-    grabLog('vista', { view: v, titulo: viewTitleEl ? viewTitleEl.textContent : '' });
+  var _gsTimer = null;
+  function horaCorta() { var d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+  function gsActualizarChip(estado, txt) {
+    var chip = document.getElementById('gsChip'); if (!chip) return;
+    var span = document.getElementById('gsChipText');
+    var cfg = gsCfg(), label, cls;
+    chip.classList.remove('gs-saving', 'gs-ok', 'gs-err', 'gs-off');
+    if (!cfg.url) { label = 'Local'; cls = 'gs-off'; }
+    else if (estado === 'saving') { label = 'Guardando…'; cls = 'gs-saving'; }
+    else if (estado === 'ok') { label = txt || 'Guardado'; cls = 'gs-ok'; }
+    else if (estado === 'err') { label = txt || 'Error'; cls = 'gs-err'; }
+    else { label = cfg.auto ? 'Sheets' : 'Sheets (manual)'; cls = 'gs-ok'; }
+    chip.classList.add(cls);
+    if (span) span.textContent = label; else chip.textContent = '☁️ ' + label;
   }
-  function descrControl(node) {
-    if (!node) return '';
-    if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') return (node.getAttribute('placeholder') || node.getAttribute('aria-label') || ('input[' + (node.type || 'text') + ']'));
-    if (node.tagName === 'SELECT') return (node.getAttribute('aria-label') || node.getAttribute('title') || 'select');
-    return (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 70);
-  }
-  function describirClic(e) {
-    var t = e.target;
-    var act = (t && t.closest) ? t.closest('button, a, select, input, textarea, [role="button"], .row-click, .stat, .step, .pend-chip, .eisen-cell, th, label') : t;
-    var node = act || t || {};
-    return {
-      tag: (node.tagName || '').toLowerCase(),
-      control: node.type || null,
-      texto: descrControl(node),
-      clase: (typeof node.className === 'string' ? node.className : '').slice(0, 60) || null,
-      id: node.id || null,
-      vista: STATE.view,
-      titulo: viewTitleEl ? viewTitleEl.textContent : ''
-    };
-  }
-  function btnGrabRefrescar() {
-    var b = document.getElementById('btnGrabar'); if (!b) return;
-    if (REC.on) {
-      var s = Math.floor((Date.now() - REC.start) / 1000);
-      b.textContent = '⏹️ Detener ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-      b.classList.add('grabando');
-      b.setAttribute('title', 'Detener la grabación y descargar el archivo');
-    } else {
-      b.textContent = '⏺️ Grabar';
-      b.classList.remove('grabando');
-      b.setAttribute('title', 'Grabar una sesión de uso (vistas, clics, tiempos) para mejorar el sistema');
-    }
-  }
-  function grabPersistir() {
-    if (!REC.on) return;
-    try {
-      var payload = JSON.stringify({ on: true, start: REC.start, lastView: REC.lastView, eventos: REC.eventos });
-      localStorage.setItem(REC_KEY, (typeof window !== 'undefined' && window.LZString) ? (String.fromCharCode(1) + window.LZString.compressToUTF16(payload)) : payload);
-    } catch (e) { }
-  }
-  function grabTimer() { if (REC.timer) clearInterval(REC.timer); REC.timer = setInterval(function () { REC.tick++; btnGrabRefrescar(); if (REC.tick % 5 === 0) grabPersistir(); }, 1000); }
-  function grabIniciar() {
-    REC.on = true; REC.start = Date.now(); REC.eventos = []; REC.lastView = null; REC.tick = 0;
-    grabLog('inicio', {
-      app: 'Gestión de Equipos Críticos', version: '2.0', fecha: new Date().toISOString(),
-      userAgent: (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
-      idioma: (typeof navigator !== 'undefined' ? navigator.language : ''),
-      pantalla: (typeof screen !== 'undefined' ? { w: screen.width, h: screen.height } : null),
-      viewport: { w: window.innerWidth, h: window.innerHeight },
-      registros: totalRegistros(), equipos: getEquipos().length
+  // Filas legibles (encabezado + datos) para las hojas Registros e Inventario.
+  function gsFilasRegistros() {
+    var filas = [['Fecha', 'Etapa', 'Equipo', 'N° Inventario', 'Estado / Resultado', 'Ejecutor', 'Empresa', 'N° doc', 'Folio', 'Observaciones']];
+    ETAPAS.forEach(function (et) {
+      (DB.registros[et.id] || []).forEach(function (r) {
+        filas.push([
+          fmtFecha(r.fecha) || '', et.nombre,
+          (r.equipo && r.equipo.nombre) || '', (r.equipo && r.equipo.inv) || '',
+          estadoResultadoTexto(r) || '', r.tecnico || '', r.empresa || '',
+          numeroDoc(r) || '', r.folio || '', r.observaciones || ''
+        ]);
+      });
     });
-    grabVista();
-    btnGrabRefrescar(); grabPersistir(); grabTimer();
-    toast('Grabación iniciada. Usa el sistema y luego pulsa «Detener».', 'ok');
+    return filas;
   }
-  function grabResumen() {
-    var porTipo = {}, vistas = {}, tiempoVista = {}, errores = 0, prevV = null, prevT = 0;
-    REC.eventos.forEach(function (ev) {
-      porTipo[ev.tipo] = (porTipo[ev.tipo] || 0) + 1;
-      if (ev.tipo === 'error') errores++;
-      if (ev.tipo === 'vista') {
-        vistas[ev.view] = (vistas[ev.view] || 0) + 1;
-        if (prevV != null) tiempoVista[prevV] = (tiempoVista[prevV] || 0) + (ev.t - prevT);
-        prevV = ev.view; prevT = ev.t;
-      }
+  function gsFilasInventario() {
+    var filas = [['ID', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Serie', 'Estado', 'Última actualización', 'N° registros']];
+    calcInventario().forEach(function (x) {
+      var e = x.e;
+      filas.push([e.id || '', e.inventario || '', e.equipo || '', e.servicio || '', e.unidad || '', e.ubicacion || '', e.marca || '', e.modelo || '', e.serie || '', x.estado, x.ultima ? fmtFecha(x.ultima) : '', x.n]);
     });
-    var fin = REC.eventos.length ? REC.eventos[REC.eventos.length - 1].t : 0;
-    if (prevV != null) tiempoVista[prevV] = (tiempoVista[prevV] || 0) + (fin - prevT);
-    return { eventos: REC.eventos.length, duracionMs: fin, errores: errores, porTipo: porTipo, vistasVisitadas: vistas, tiempoPorVistaMs: tiempoVista };
+    return filas;
   }
-  function grabDescargar() {
-    var obj = { meta: { app: 'Gestión de Equipos Críticos', version: '2.0', generado: new Date().toISOString(), nota: 'Telemetría de uso (vistas, clics, tiempos, avisos, errores) para análisis y mejora del sistema.' }, resumen: grabResumen(), eventos: REC.eventos };
-    try {
-      var blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
-      var url = URL.createObjectURL(blob);
-      var a = el('a', { href: url, download: 'Grabacion_Uso_' + hoyISO() + '_' + Date.now().toString(36) + '.json' });
-      document.body.appendChild(a); a.click();
-      setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-    } catch (e) { toast('No se pudo generar el archivo: ' + (e && e.message ? e.message : e), 'err'); }
+  function gsPayload() {
+    var json = JSON.stringify(DB);
+    var comp = tieneLZ();
+    return JSON.stringify({
+      datos: comp ? window.LZString.compressToUTF16(json) : json,
+      comprimido: comp,
+      registros: gsFilasRegistros(),
+      inventario: gsFilasInventario(),
+      rev: Date.now()
+    });
   }
-  function grabDetener() {
-    if (!REC.on) return;
-    grabLog('fin', {});
-    REC.on = false; if (REC.timer) { clearInterval(REC.timer); REC.timer = null; }
-    btnGrabRefrescar();
-    grabDescargar();
-    try { localStorage.removeItem(REC_KEY); } catch (e) { }
-    toast('Grabación detenida (' + REC.eventos.length + ' eventos). Archivo descargado.', 'ok');
+  // Empuja la BD a Google Sheets. manual=true muestra avisos.
+  function gsPush(manual, cb) {
+    var cfg = gsCfg();
+    if (!cfg.url) { if (manual) toast('Configura primero la URL de Google Sheets (Configuración).', 'err'); cb && cb(false); return; }
+    gsActualizarChip('saving');
+    var body;
+    try { body = gsPayload(); } catch (e) { gsActualizarChip('err'); if (manual) toast('No se pudo preparar el envío: ' + (e.message || e), 'err'); cb && cb(false); return; }
+    var okFinal = function (confirmado) { gsActualizarChip('ok', (confirmado ? 'Guardado ' : 'Enviado ') + horaCorta()); if (manual) toast(confirmado ? 'Datos guardados en Google Sheets.' : 'Datos enviados a Google Sheets (sin confirmación de respuesta).', 'ok'); cb && cb(true); };
+    var falla = function (msg) { gsActualizarChip('err', 'Sin guardar'); if (manual) toast('No se pudo guardar en Google Sheets: ' + (msg || 'error') + '.', 'err'); cb && cb(false); };
+    // 1) Intento con CORS (respuesta confirmable).
+    if (typeof fetch === 'function') {
+      fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) { var j = {}; try { j = JSON.parse(txt); } catch (e) {} okFinal(!!(j && j.ok)); })
+        .catch(function () {
+          // 2) file:// u origen sin CORS: envío "a ciegas".
+          fetch(cfg.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
+            .then(function () { okFinal(false); })
+            .catch(function (e) { falla(e && e.message); });
+        });
+    } else { falla('navegador sin fetch'); }
   }
-  function grabRestaurar() {
-    try {
-      var raw = localStorage.getItem(REC_KEY); if (!raw) return;
-      var text = (raw.charAt(0) === String.fromCharCode(1) && window.LZString) ? window.LZString.decompressFromUTF16(raw.slice(1)) : raw;
-      var data = JSON.parse(text);
-      if (data && data.on) {
-        REC.on = true; REC.start = data.start || Date.now(); REC.eventos = data.eventos || []; REC.lastView = data.lastView || null; REC.tick = 0;
-        grabLog('reanudada', {});
-        btnGrabRefrescar(); grabTimer();
-      }
-    } catch (e) { }
+  function gsScheduleSync() {
+    var cfg = gsCfg();
+    if (!cfg.url || !cfg.auto) return;
+    if (_gsTimer) clearTimeout(_gsTimer);
+    _gsTimer = setTimeout(function () { _gsTimer = null; gsPush(false); }, 2500);
   }
+  // Lectura sin CORS mediante JSONP.
+  function gsJsonp(action, onok, onerr) {
+    var cfg = gsCfg();
+    if (!cfg.url) { onerr && onerr('sin URL'); return; }
+    var cbName = '__gscb_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    var sep = cfg.url.indexOf('?') >= 0 ? '&' : '?';
+    var s = document.createElement('script');
+    var limpiar = function () { try { delete window[cbName]; } catch (e) { window[cbName] = undefined; } if (s.parentNode) s.parentNode.removeChild(s); };
+    var to = setTimeout(function () { limpiar(); onerr && onerr('tiempo de espera agotado'); }, 25000);
+    window[cbName] = function (data) { clearTimeout(to); limpiar(); onok && onok(data); };
+    s.onerror = function () { clearTimeout(to); limpiar(); onerr && onerr('no se pudo conectar'); };
+    s.src = cfg.url + sep + 'action=' + encodeURIComponent(action) + '&callback=' + cbName + '&t=' + Date.now();
+    document.body.appendChild(s);
+  }
+  function gsNormalizarDB(data) {
+    data.config = data.config || {};
+    if (!Array.isArray(data.config.tecnicos) || !data.config.tecnicos.length) data.config.tecnicos = TECNICOS_DEFAULT.slice();
+    if (!Array.isArray(data.config.empresas)) data.config.empresas = [];
+    if (!data.equiposOverrides || typeof data.equiposOverrides !== 'object') data.equiposOverrides = {};
+    data.registros = data.registros || {};
+    ETAPAS.forEach(function (e) { if (!Array.isArray(data.registros[e.id])) data.registros[e.id] = []; });
+    return data;
+  }
+  function gsPull(cb) {
+    var cfg = gsCfg();
+    if (!cfg.url) { toast('Configura primero la URL de Google Sheets.', 'err'); cb && cb(false); return; }
+    if (!confirm('Cargar REEMPLAZARÁ los datos locales con los de Google Sheets. Se recomienda descargar un respaldo antes. ¿Continuar?')) { cb && cb(false); return; }
+    gsActualizarChip('saving');
+    gsJsonp('load', function (data) {
+      try {
+        if (!data || !data.ok) throw new Error((data && data.error) || 'respuesta inválida');
+        var datos = data.datos || '';
+        if (!datos) throw new Error('no hay datos guardados en la hoja todavía');
+        var json = (data.comprimido === false) ? datos : (tieneLZ() ? window.LZString.decompressFromUTF16(datos) : datos);
+        var nuevo = JSON.parse(json);
+        if (!nuevo || !nuevo.registros) throw new Error('los datos de la hoja no son válidos');
+        var conexion = (DB.config && DB.config.gs && DB.config.gs.url) ? DB.config.gs : null;
+        DB = gsNormalizarDB(nuevo);
+        if (conexion) DB.config.gs = conexion; // conserva la conexión (URL) de este equipo
+        invalidarEquipos();
+        guardarDB();
+        gsActualizarChip('ok', 'Cargado ' + horaCorta());
+        toast('Datos cargados desde Google Sheets.', 'ok');
+        navegar('__buscar');
+        cb && cb(true);
+      } catch (e) { gsActualizarChip('err', 'Error'); toast('No se pudo cargar: ' + (e.message || e), 'err'); cb && cb(false); }
+    }, function (err) { gsActualizarChip('err', 'Error'); toast('No se pudo conectar con Google Sheets: ' + err + '.', 'err'); cb && cb(false); });
+  }
+  function gsProbar() {
+    var cfg = gsCfg();
+    if (!cfg.url) { toast('Ingresa y guarda la URL primero.', 'err'); return; }
+    gsActualizarChip('saving');
+    gsJsonp('ping', function (data) {
+      if (data && data.ok) { gsActualizarChip('ok', 'Conectado'); toast('Conexión correcta con Google Sheets. ' + (data.updated ? ('Último guardado: ' + data.updated) : 'Aún sin datos guardados.'), 'ok'); }
+      else { gsActualizarChip('err', 'Error'); toast('El App web respondió de forma inesperada' + (data && data.error ? (': ' + data.error) : '') + '.', 'err'); }
+    }, function (err) { gsActualizarChip('err', 'Error'); toast('No respondió: ' + err + '. Revisa la URL y que esté publicado para «Cualquiera».', 'err'); });
+  }
+  // Código de Apps Script que el usuario pega en su Google Sheet (App web).
+  function gsAppsScriptCode() {
+    return [
+      "/** Gestion de Equipos Criticos - puente con Google Sheets.",
+      " *  Pega esto en tu Google Sheet: Extensiones -> Apps Script (borra lo que",
+      " *  haya y pega esto). Guarda. Luego: Implementar -> Nueva implementacion ->",
+      " *  tipo 'App web', Ejecutar como: Yo, Con acceso: Cualquiera. Copia la URL",
+      " *  que termina en /exec y pegala en la app (Configuracion). */",
+      "var DATOS_TAB = '_gec_datos';",
+      "var CHUNK = 45000;",
+      "",
+      "function doGet(e) {",
+      "  var p = (e && e.parameter) || {}, cb = p.callback || '', out;",
+      "  try {",
+      "    if (p.action === 'ping') out = { ok: true, updated: prop_('updated'), registros: Number(prop_('rows') || 0) };",
+      "    else out = { ok: true, datos: leerDatos_(), comprimido: (prop_('comp') !== 'no'), updated: prop_('updated') };",
+      "  } catch (err) { out = { ok: false, error: String(err) }; }",
+      "  return responder_(out, cb);",
+      "}",
+      "",
+      "function doPost(e) {",
+      "  var out;",
+      "  try {",
+      "    var body = JSON.parse(e.postData.contents);",
+      "    guardarDatos_(String(body.datos || ''));",
+      "    prop_('comp', body.comprimido ? 'si' : 'no');",
+      "    if (body.registros) escribirHoja_('Registros', body.registros);",
+      "    if (body.inventario) escribirHoja_('Inventario', body.inventario);",
+      "    prop_('updated', new Date().toISOString());",
+      "    prop_('rows', String(body.registros ? Math.max(0, body.registros.length - 1) : 0));",
+      "    out = { ok: true, updated: prop_('updated') };",
+      "  } catch (err) { out = { ok: false, error: String(err) }; }",
+      "  return responder_(out, '');",
+      "}",
+      "",
+      "function responder_(obj, cb) {",
+      "  var js = JSON.stringify(obj);",
+      "  if (cb) return ContentService.createTextOutput(cb + '(' + js + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);",
+      "  return ContentService.createTextOutput(js).setMimeType(ContentService.MimeType.JSON);",
+      "}",
+      "function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }",
+      "function prop_(k, v) { var ps = PropertiesService.getDocumentProperties(); if (v === undefined) return ps.getProperty(k); ps.setProperty(k, v); return v; }",
+      "function tab_(name) { var ss = ss_(); return ss.getSheetByName(name) || ss.insertSheet(name); }",
+      "function guardarDatos_(s) {",
+      "  var sh = tab_(DATOS_TAB); sh.clear();",
+      "  var rows = [], i = 0;",
+      "  while (i < s.length) { rows.push([s.substr(i, CHUNK)]); i += CHUNK; }",
+      "  if (!rows.length) rows = [['']];",
+      "  sh.getRange(1, 1, rows.length, 1).setNumberFormat('@').setValues(rows);",
+      "}",
+      "function leerDatos_() {",
+      "  var sh = ss_().getSheetByName(DATOS_TAB); if (!sh) return '';",
+      "  var last = sh.getLastRow(); if (!last) return '';",
+      "  return sh.getRange(1, 1, last, 1).getValues().map(function (r) { return r[0]; }).join('');",
+      "}",
+      "function escribirHoja_(name, filas) {",
+      "  var sh = tab_(name); sh.clear();",
+      "  if (!filas || !filas.length) return;",
+      "  var n = filas[0].length;",
+      "  filas = filas.map(function (r) { r = r.slice(0, n); while (r.length < n) r.push(''); return r; });",
+      "  sh.getRange(1, 1, filas.length, n).setValues(filas);",
+      "}"
+    ].join('\n');
+  }
+
 
   // ------------------------------------------------------------- Selector eq.
   // Combobox accesible: búsqueda con teclado (flechas + Enter + Esc) y ARIA.
@@ -877,7 +970,6 @@
     else if (STATE.view === '__todos') renderTodos();
     else if (STATE.view === '__config') renderConfig();
     else renderEtapa(STATE.view);
-    grabVista();
   }
 
   function renderSidebar() {
@@ -2548,6 +2640,58 @@
     body3.appendChild(actions);
     card3.appendChild(body3);
     contentEl.appendChild(card3);
+
+    // ---- Google Sheets ----
+    var cfg = gsCfg();
+    var card4 = el('div', { class: 'card gs-card' });
+    card4.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '☁️ Guardar en Google Sheets'), el('span', { class: 'desc' }, 'Sincroniza la base con una hoja de cálculo (respaldo central, accesible desde cualquier equipo).')]));
+    var b4 = el('div', { class: 'card-body' });
+
+    var rowUrl = el('div', { class: 'gs-row' });
+    var inUrl = el('input', { type: 'url', placeholder: 'https://script.google.com/macros/s/…/exec', value: cfg.url || '', 'aria-label': 'URL del App web de Google' });
+    var bUrl = el('button', { class: 'btn btn-primary' }, '💾 Guardar URL');
+    bUrl.onclick = function () { cfg.url = inUrl.value.trim(); guardarDB(); gsActualizarChip(); toast(cfg.url ? 'URL guardada.' : 'URL borrada (modo local).', 'ok'); renderConfig(); };
+    rowUrl.appendChild(inUrl); rowUrl.appendChild(bUrl);
+    b4.appendChild(rowUrl);
+
+    var rowAuto = el('div', { class: 'gs-row' });
+    var lblAuto = el('label', { style: 'display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer' });
+    var chkAuto = el('input', { type: 'checkbox' }); chkAuto.checked = !!cfg.auto;
+    chkAuto.onchange = function () { cfg.auto = chkAuto.checked; guardarDB(); gsActualizarChip(); };
+    lblAuto.appendChild(chkAuto); lblAuto.appendChild(document.createTextNode('Guardar automáticamente en Google Sheets cada vez que cambien los datos'));
+    rowAuto.appendChild(lblAuto);
+    b4.appendChild(rowAuto);
+
+    var rowBtns = el('div', { class: 'gs-row' });
+    var bAhora = el('button', { class: 'btn btn-success' }, '☁️ Guardar ahora'); bAhora.onclick = function () { gsPush(true); };
+    var bCargar = el('button', { class: 'btn' }, '⬇️ Cargar desde Google Sheets'); bCargar.onclick = function () { gsPull(); };
+    var bProbar = el('button', { class: 'btn' }, '🔌 Probar conexión'); bProbar.onclick = function () { gsProbar(); };
+    rowBtns.appendChild(bAhora); rowBtns.appendChild(bCargar); rowBtns.appendChild(bProbar);
+    b4.appendChild(rowBtns);
+
+    b4.appendChild(el('div', { class: 'hint' }, cfg.url
+      ? 'Se guarda una copia local (este navegador) y se sincroniza con Google Sheets. La hoja «_gec_datos» guarda el estado exacto; «Registros» e «Inventario» son las hojas legibles.'
+      : 'Sin URL configurada: los datos se guardan solo en este navegador (localStorage). Sigue los pasos de abajo para conectar una Google Sheet.'));
+
+    var det = el('details', { class: 'gs-code' });
+    det.appendChild(el('summary', {}, '¿Cómo conectar una Google Sheet? (configuración única)'));
+    var ol = el('ol', { class: 'gs-pasos' });
+    [
+      'Crea una Google Sheet nueva (escribe sheets.new en el navegador) o abre la que quieras usar.',
+      'En esa hoja: menú Extensiones → Apps Script. Borra el contenido y pega el código de abajo. Guarda (💾).',
+      'Pulsa Implementar → Nueva implementación → engranaje → «App web». Ejecutar como: «Yo». Con acceso: «Cualquiera». Implementar, y autoriza los permisos cuando los pida.',
+      'Copia la URL que termina en /exec, pégala arriba y pulsa «Guardar URL». Luego «Probar conexión».',
+      'Activa «Guardar automáticamente» y pulsa «Guardar ahora». En otro equipo, pega la MISMA URL y usa «Cargar desde Google Sheets».'
+    ].forEach(function (p) { ol.appendChild(el('li', {}, p)); });
+    det.appendChild(ol);
+    var bCopiar = el('button', { class: 'btn btn-sm', style: 'margin:8px 0' }, '📋 Copiar código de Apps Script');
+    var ta = el('textarea', { readonly: 'readonly', spellcheck: 'false', 'aria-label': 'Código de Apps Script' }, gsAppsScriptCode());
+    bCopiar.onclick = function () { ta.focus(); ta.select(); try { document.execCommand('copy'); toast('Código copiado al portapapeles.', 'ok'); } catch (e) { toast('Selecciona el texto y cópialo manualmente.', 'err'); } };
+    det.appendChild(bCopiar); det.appendChild(ta);
+    b4.appendChild(det);
+
+    card4.appendChild(b4);
+    contentEl.appendChild(card4);
   }
 
   function autoaprenderEmpresa(rec) {
@@ -2967,18 +3111,10 @@
     };
     bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); mt.setAttribute('aria-expanded', 'false'); };
 
-    // ---- Grabación de sesión de uso ----
-    var btnG = document.getElementById('btnGrabar');
-    if (btnG) btnG.onclick = function () { if (REC.on) grabDetener(); else grabIniciar(); };
-    // Listeners globales (solo registran si hay grabación activa).
-    document.addEventListener('click', function (e) { if (REC.on) grabLog('clic', describirClic(e)); }, true);
-    document.addEventListener('change', function (e) {
-      if (!REC.on || !e.target) return;
-      grabLog('cambio', { control: descrControl(e.target), valor: (e.target.value != null ? String(e.target.value) : '').slice(0, 80), vista: STATE.view });
-    }, true);
-    window.addEventListener('error', function (ev) { if (REC.on) grabLog('error', { mensaje: (ev.message || 'Error'), archivo: ev.filename ? String(ev.filename).split('/').pop() : '', linea: ev.lineno || null }); });
-    window.addEventListener('beforeunload', function () { grabPersistir(); });
-    grabRestaurar(); // reanuda una grabación en curso tras recargar
+    // ---- Sincronización con Google Sheets ----
+    var chip = document.getElementById('gsChip');
+    if (chip) chip.onclick = function () { navegar('__config'); };
+    gsActualizarChip();
 
     render();
   }
