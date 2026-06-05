@@ -178,6 +178,7 @@
         { key: 'mes', label: 'Mes', tipo: 'select', opciones: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], ancho: 8, derivado: 'mes' },
         { key: 'tipo', label: 'Tipo', tipo: 'select', opciones: ['X', 'R', 'RA', 'PM'], ancho: 8, hint: 'X programada · R reprogramada · RA año anterior · PM puesta en marcha' },
         { key: 'resultado', label: 'Resultado', tipo: 'select', opciones: ['Si', 'No', 'Baja', 'NU', 'Pendiente', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'], ancho: 12 },
+        { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['Operativo', 'No operativo', 'En servicio técnico', 'Baja'], ancho: 16, hint: 'Si lo dejas vacío, se deduce del resultado.' },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
       ]
     },
@@ -190,8 +191,9 @@
         { key: 'tipo', label: 'Tipo de pendiente', tipo: 'select', req: true, opciones: ['Gestión general', 'Documento faltante', 'Reprogramación MP', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo', 'Otro'], ancho: 22 },
         { key: 'fecha', label: 'Fecha', tipo: 'fecha', req: true, ancho: 14 },
         { key: 'estado_pendiente', label: 'Estado', tipo: 'select', opciones: ['Pendiente', 'En proceso', 'Resuelto'], def: 'Pendiente', ancho: 14 },
-        { key: 'tecnico', label: 'Responsable', tipo: 'tecnico', ancho: 24 },
-        { key: 'fecha_resolucion', label: 'Fecha de resolución', tipo: 'fecha', ancho: 16 },
+        { key: 'tecnico', label: 'Ejecutor (técnico)', tipo: 'tecnico', ancho: 24, hint: 'Quien realiza el trabajo.' },
+        { key: 'responsable', label: 'Responsable de seguimiento', tipo: 'tecnico', ancho: 24, def: SUPERVISOR, hint: 'Quien asegura que se haga (accountable).' },
+        { key: 'fecha_resolucion', label: 'Fecha de compromiso', tipo: 'fecha', ancho: 16 },
         { key: 'observaciones', label: 'Descripción', tipo: 'textarea', col: 'full', ancho: 44 }
       ]
     }
@@ -204,7 +206,7 @@
     { label: 'Inicio', items: ['__dashboard', '__inventario'] },
     { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__est_baja', '__pendientes', '__est_desconocido'] },
     { label: 'Mantención preventiva', items: ['__mp_import', 'mp'] },
-    { label: 'Gestión', items: ['__foco', '__todos', '__config'] }
+    { label: 'Gestión', items: ['__seguimiento', '__foco', '__todos', '__config'] }
   ];
   // Nota: las etapas del flujo correctivo (solicitud, envío, estado_st, recepción,
   // diagnóstico, cotización, gestión_oc, emisión_oc, reparación, cierre) ya no
@@ -543,6 +545,9 @@
         if (record && record[campo.key]) {
           if (DB.config.tecnicos.indexOf(record[campo.key]) < 0) ctrl.appendChild(el('option', { value: record[campo.key] }, record[campo.key]));
           ctrl.value = record[campo.key];
+        } else if (!record && campo.def) {
+          if (DB.config.tecnicos.indexOf(campo.def) < 0) ctrl.appendChild(el('option', { value: campo.def }, campo.def));
+          ctrl.value = campo.def;
         }
         field.appendChild(ctrl);
         controls[campo.key] = { get: function () { return ctrl.value; } };
@@ -678,6 +683,7 @@
     else if (ESTADO_VIEWS[STATE.view]) renderInventario(ESTADO_VIEWS[STATE.view]);
     else if (STATE.view === '__mp_import') renderMPImport();
     else if (STATE.view === '__pendientes') renderPendientes();
+    else if (STATE.view === '__seguimiento') renderSeguimiento();
     else if (STATE.view === '__foco') renderTripleFoco();
     else if (STATE.view === '__todos') renderTodos();
     else if (STATE.view === '__config') renderConfig();
@@ -706,6 +712,7 @@
         else if (id === '__mp_import') { label = 'Importar programación MP'; icono = '📥'; }
         else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'pendientes sin resolver'; }
         else if (id === '__todos') { label = 'Todos los registros'; icono = '🗂️'; badge = totalRegistros(); }
+        else if (id === '__seguimiento') { label = 'Mi seguimiento'; icono = '👁️'; badge = pendientesVencidos(); badgeTitle = 'pendientes vencidos'; }
         else if (id === '__foco') { label = 'Triple Foco'; icono = '🎯'; badge = focoLista().length; badgeTitle = 'tareas en el foco de hoy'; }
         else if (id === '__config') { label = 'Configuración'; icono = '⚙️'; }
         else {
@@ -927,7 +934,7 @@
       case 'estado_st': return 'Servicio técnico';
       case 'envio': return 'Servicio técnico';
       case 'solicitud': return 'No operativo';
-      case 'mp': return (window.EventosMP && window.EventosMP.estadoFromResultado) ? window.EventosMP.estadoFromResultado(r.resultado) : null;
+      case 'mp': return normEstado(r.estado_equipo) || ((window.EventosMP && window.EventosMP.estadoFromResultado) ? window.EventosMP.estadoFromResultado(r.resultado) : null);
       default: return null; // etapas comerciales no definen estado físico
     }
   }
@@ -1519,7 +1526,7 @@
         var idx = DB.registros.pendiente.findIndex(function (x) { return x._id === p._id; });
         if (idx >= 0) DB.registros.pendiente[idx] = rec; else DB.registros.pendiente.push(rec);
         autoaprenderEmpresa(rec); guardarDB();
-        toast('Pendiente actualizado.', 'ok'); closeModal(); renderSidebar(); renderPendientes();
+        toast('Pendiente actualizado.', 'ok'); closeModal(); render();
       } catch (err) { toast(err.message, 'err'); }
     };
     var bc = el('button', { class: 'btn' }, 'Cancelar'); bc.onclick = closeModal;
@@ -1572,7 +1579,7 @@
   // Fila de pendiente para la matriz / lista por clasificar: cuadrante + foco.
   function chipPendiente(p) {
     var row = el('div', { class: 'pend-chip' });
-    var meta = [ejecutorTxt(p)]; if (equipoCorto(p.equipo)) meta.push(equipoCorto(p.equipo));
+    var meta = [ejecutorTxt(p)]; if (p.responsable) meta.push('Asegura: ' + p.responsable); if (equipoCorto(p.equipo)) meta.push(equipoCorto(p.equipo));
     row.appendChild(el('div', { class: 'tx' }, [
       el('div', { class: 'd' }, textoPend(p)),
       el('div', { class: 'count-note' }, meta.filter(Boolean).join(' · '))
@@ -1616,13 +1623,14 @@
     if (!Array.isArray(p.actualizaciones)) p.actualizaciones = [];
     p.actualizaciones.push({ id: uid(), texto: txt.trim(), createdAt: new Date().toISOString() });
     p._updatedAt = new Date().toISOString();
-    guardarDB(); toast('Seguimiento registrado.', 'ok'); renderTripleFoco();
+    guardarDB(); toast('Seguimiento registrado.', 'ok'); render();
   }
   // Ítem unificado del foco/sapo: ejecutor, riesgo, estado, seguimiento y (opcional) reorden.
   function focoItem(p, i, conReorden) {
     var it = el('div', { class: 'foco-item' + (i === 0 ? ' sapo' : '') });
     it.appendChild(el('span', { class: 'foco-num' }, i === 0 ? '🐸' : String(i + 1)));
     var meta = [ejecutorTxt(p)];
+    if (p.responsable) meta.push('Asegura: ' + p.responsable);
     if (equipoCorto(p.equipo)) meta.push(equipoCorto(p.equipo));
     meta.push(ultimoSeguimientoTxt(p));
     it.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(p)), el('div', { class: 'count-note' }, meta.filter(Boolean).join(' · '))]));
@@ -1710,6 +1718,109 @@
     });
     bodyM.appendChild(grid);
     cardM.appendChild(bodyM); contentEl.appendChild(cardM);
+  }
+
+  // ===================================================== Mi seguimiento (SLA)
+  function diasSinSeguimiento(p) {
+    var ref = (Array.isArray(p.actualizaciones) && p.actualizaciones.length) ? p.actualizaciones[p.actualizaciones.length - 1].createdAt : (p._createdAt || p.fecha);
+    if (!ref) return 0;
+    var d = new Date(ref); if (isNaN(d)) d = new Date(String(ref).slice(0, 10) + 'T00:00:00');
+    if (isNaN(d)) return 0;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+  function riesgoOrden(p) {
+    var r = riesgoPend(p);
+    if (r && r.cls === 'age-bad') return 0;          // vencido
+    if (r && r.cls === 'age-warn') return 1;         // por vencer
+    if (diasSinSeguimiento(p) > 7) return 2;         // sin movimiento
+    return 3;
+  }
+  function pendientesVencidos() { return pendAbiertos().filter(function (p) { var r = riesgoPend(p); return r && r.cls === 'age-bad'; }).length; }
+
+  function renderSeguimiento() {
+    setTitulo('👁️ Mi seguimiento', 'Pendientes que aseguras · tú accountable, el técnico ejecuta · SLA por fecha de compromiso');
+    configurarExport('Exportar pendientes', function () { exportarEtapa(ETAPAS_BY_ID['pendiente']); });
+    contentEl.innerHTML = '';
+    var abiertos = pendAbiertos();
+
+    var venc = abiertos.filter(function (p) { var r = riesgoPend(p); return r && r.cls === 'age-bad'; }).length;
+    var porV = abiertos.filter(function (p) { var r = riesgoPend(p); return r && r.cls === 'age-warn'; }).length;
+    var sinM = abiertos.filter(function (p) { return diasSinSeguimiento(p) > 7; }).length;
+    var stats = el('div', { class: 'stat-grid' });
+    function s(n, l, accent) { return el('div', { class: 'stat' + (accent ? ' accent' : '') }, [el('div', { class: 'n' }, String(n)), el('div', { class: 'l' }, l)]); }
+    stats.appendChild(s(abiertos.length, 'Abiertos'));
+    stats.appendChild(s(venc, 'Vencidos'));
+    stats.appendChild(s(porV, 'Por vencer (≤3d)'));
+    stats.appendChild(s(sinM, 'Sin movimiento (>7d)'));
+    contentEl.appendChild(stats);
+
+    contentEl.appendChild(el('div', { class: 'banner' },
+      'Los pendientes que TÚ aseguras (RACI: tú accountable, el técnico ejecuta), ordenados por riesgo según la fecha de compromiso. ' +
+      'Empuja, registra el seguimiento y mantén el cumplimiento.'));
+
+    if (!abiertos.length) { contentEl.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '✅'), el('div', {}, 'No hay pendientes abiertos.')])); return; }
+
+    var card = el('div', { class: 'card' });
+    var body = el('div', { class: 'card-body' });
+    var toolbar = el('div', { class: 'toolbar' });
+    var search = el('input', { type: 'search', placeholder: 'Buscar por equipo, descripción, ejecutor…' });
+    var selResp = el('select'); selResp.appendChild(el('option', { value: '' }, 'Responsable: todos'));
+    var resps = {}; abiertos.forEach(function (p) { if (p.responsable) resps[p.responsable] = 1; });
+    Object.keys(resps).sort(cmpNat).forEach(function (x) { selResp.appendChild(el('option', { value: x }, 'Asegura: ' + x)); });
+    var selEjec = el('select'); selEjec.appendChild(el('option', { value: '' }, 'Ejecutor: todos'));
+    var ejecs = {}; abiertos.forEach(function (p) { if (p.tecnico) ejecs[p.tecnico] = 1; });
+    Object.keys(ejecs).sort(cmpNat).forEach(function (x) { selEjec.appendChild(el('option', { value: x }, 'Ejecuta: ' + x)); });
+    var selRiesgo = el('select'); [['', 'Todos los riesgos'], ['vencido', 'Vencidos'], ['porvencer', 'Por vencer'], ['sinmov', 'Sin movimiento']].forEach(function (o) { selRiesgo.appendChild(el('option', { value: o[0] }, o[1])); });
+    toolbar.appendChild(search); toolbar.appendChild(selResp); toolbar.appendChild(selEjec); toolbar.appendChild(selRiesgo);
+    toolbar.appendChild(el('div', { class: 'spacer' }));
+    var note = el('span', { class: 'count-note' }); toolbar.appendChild(note);
+    body.appendChild(toolbar);
+    var cont = el('div'); body.appendChild(cont);
+
+    function pintar() {
+      var q = search.value.trim().toLowerCase(), fr = selResp.value, fe = selEjec.value, fri = selRiesgo.value;
+      var rows = abiertos.filter(function (p) {
+        if (fr && p.responsable !== fr) return false;
+        if (fe && p.tecnico !== fe) return false;
+        if (fri) { var o = riesgoOrden(p); if (fri === 'vencido' && o !== 0) return false; if (fri === 'porvencer' && o !== 1) return false; if (fri === 'sinmov' && o !== 2) return false; }
+        if (!q) return true;
+        return ((p.inv || '') + ' ' + equipoCorto(p.equipo) + ' ' + (p.observaciones || '') + ' ' + (p.tipo || '') + ' ' + (p.tecnico || '') + ' ' + (p.responsable || '')).toLowerCase().indexOf(q) >= 0;
+      });
+      rows.sort(function (a, b) {
+        var d = riesgoOrden(a) - riesgoOrden(b); if (d) return d;
+        var ca = a.fecha_resolucion || '9999-99-99', cb = b.fecha_resolucion || '9999-99-99';
+        if (ca !== cb) return ca < cb ? -1 : 1;
+        return diasSinSeguimiento(b) - diasSinSeguimiento(a);
+      });
+      note.textContent = rows.length + ' pendiente(s)';
+      cont.innerHTML = '';
+      if (!rows.length) { cont.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '🔎'), el('div', {}, 'Sin pendientes que coincidan.')])); return; }
+      var wrap = el('div', { class: 'tabla-wrap' }); var t = el('table', { class: 'data' });
+      t.appendChild(el('thead', {}, el('tr', {}, [th('Riesgo'), th('Descripción'), th('Equipo'), th('Ejecutor'), th('Asegura'), th('Estado'), th('Compromiso'), th('Últ. seguimiento'), th('Acciones')])));
+      var tb = el('tbody');
+      rows.forEach(function (p) {
+        var tr = el('tr');
+        var r = riesgoPend(p);
+        tr.appendChild(td(r ? el('span', { class: 'age-pill ' + r.cls }, r.label) : (riesgoOrden(p) === 2 ? el('span', { class: 'age-pill age-warn' }, 'Sin movimiento') : document.createTextNode('—'))));
+        tr.appendChild(td(textoPend(p)));
+        tr.appendChild(td(equipoCorto(p.equipo) || '—'));
+        tr.appendChild(td(p.tecnico || '—'));
+        tr.appendChild(td(p.responsable || '—'));
+        tr.appendChild(td(selEstadoPend(p, renderSeguimiento)));
+        tr.appendChild(td(p.fecha_resolucion ? fmtFecha(p.fecha_resolucion) : '—'));
+        tr.appendChild(td(ultimoSeguimientoTxt(p)));
+        var acc = el('td', { class: 'acciones' });
+        var bSeg = el('button', { class: 'btn btn-sm btn-primary', title: 'Registrar seguimiento' }, '📝 Seguimiento'); bSeg.onclick = function () { registrarSeguimiento(p); };
+        var bEd = el('button', { class: 'btn btn-sm', title: 'Editar' }, '✏️'); bEd.onclick = function () { abrirEditarPendiente(p); };
+        acc.appendChild(bSeg); acc.appendChild(document.createTextNode(' ')); acc.appendChild(bEd);
+        tr.appendChild(acc);
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb); wrap.appendChild(t); cont.appendChild(wrap);
+    }
+    search.addEventListener('input', pintar); selResp.addEventListener('change', pintar); selEjec.addEventListener('change', pintar); selRiesgo.addEventListener('change', pintar);
+    pintar();
+    card.appendChild(body); contentEl.appendChild(card);
   }
 
   // --------------------------------------------------------------- Etapa view
