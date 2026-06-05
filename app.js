@@ -172,9 +172,10 @@
       desc: 'Eventos de mantenimiento preventivo, importados desde la Programación MP (.xlsm) o creados manualmente.',
       campos: [
         { key: 'equipo', label: 'Equipo (listado crítico)', tipo: 'equipo', col: 'full' },
-        { key: 'fecha', label: 'Fecha', tipo: 'fecha', req: true, ancho: 14 },
-        { key: 'anio', label: 'Año', tipo: 'text', ancho: 8 },
-        { key: 'mes', label: 'Mes', tipo: 'select', opciones: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], ancho: 8 },
+        { key: 'fecha', label: 'Fecha', tipo: 'fecha', req: true, ancho: 14, hint: 'El año y el mes se calculan automáticamente desde la fecha.' },
+        { key: 'tecnico', label: 'Ejecutor', tipo: 'tecnico', ancho: 24 },
+        { key: 'anio', label: 'Año', tipo: 'text', ancho: 8, derivado: 'anio' },
+        { key: 'mes', label: 'Mes', tipo: 'select', opciones: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], ancho: 8, derivado: 'mes' },
         { key: 'tipo', label: 'Tipo', tipo: 'select', opciones: ['X', 'R', 'RA', 'PM'], ancho: 8, hint: 'X programada · R reprogramada · RA año anterior · PM puesta en marcha' },
         { key: 'resultado', label: 'Resultado', tipo: 'select', opciones: ['Si', 'No', 'Baja', 'NU', 'Pendiente', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'], ancho: 12 },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
@@ -507,6 +508,22 @@
     }
 
     etapa.campos.forEach(function (campo) {
+      // Campos derivados (p. ej. Año/Mes de MP): no se ingresan; se calculan
+      // automáticamente desde la fecha. No se renderiza ningún control visible.
+      if (campo.derivado) {
+        controls[campo.key] = { get: function () {
+          var f = ctx.fechaGet ? ctx.fechaGet() : '';
+          if (!f) return '';
+          if (campo.derivado === 'anio') return String(f).slice(0, 4);
+          if (campo.derivado === 'mes') {
+            var mnum = parseInt(String(f).slice(5, 7), 10);
+            var MS = (window.EventosMP && window.EventosMP.MESES) || ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            return MS[mnum - 1] || '';
+          }
+          return '';
+        } };
+        return;
+      }
       var clazz = 'field' + (campo.col === 'full' ? ' col-full' : (campo.col === '2' ? ' col-2' : ''));
       var field = el('div', { class: clazz });
       var lbl = el('label', {}, campo.label + ' ');
@@ -557,6 +574,7 @@
         ctrl.value = record ? (record[campo.key] || '') : hoyISO();
         field.appendChild(ctrl);
         controls[campo.key] = { get: function () { return ctrl.value; } };
+        if (campo.key === 'fecha') ctx.fechaGet = function () { return ctrl.value; };
       } else if (campo.tipo === 'textarea') {
         ctrl = el('textarea', { rows: '2', placeholder: 'Comentarios relevantes…' });
         if (record && record[campo.key]) ctrl.value = record[campo.key];
@@ -1722,9 +1740,9 @@
       try {
         var rec = collectForm(etapa, form.controls);
         if (id === 'mp') {
-          var aviso = validarFechaMesMP(rec);
-          if (aviso && !confirm(aviso + '\n\n¿Desea guardar de todos modos?')) return;
-          rec._origen = 'manual'; // MP creada/editada a mano: la importación no la sobrescribe
+          // El año y el mes se derivan de la fecha (campos derivados): no hay
+          // desajuste posible. La MP manual no se sobrescribe al importar.
+          rec._origen = 'manual';
         }
         if (editando) {
           rec._id = editando._id; rec._stage = id; rec._createdAt = editando._createdAt; rec._updatedAt = new Date().toISOString();
