@@ -1554,10 +1554,12 @@
   // Fila de pendiente para la matriz / lista por clasificar: cuadrante + foco.
   function chipPendiente(p) {
     var row = el('div', { class: 'pend-chip' });
+    var meta = [ejecutorTxt(p)]; if (equipoCorto(p.equipo)) meta.push(equipoCorto(p.equipo));
     row.appendChild(el('div', { class: 'tx' }, [
       el('div', { class: 'd' }, textoPend(p)),
-      el('div', { class: 'count-note' }, equipoCorto(p.equipo) || (p.tipo || '—'))
+      el('div', { class: 'count-note' }, meta.filter(Boolean).join(' · '))
     ]));
+    var rc = riesgoPend(p); if (rc) row.appendChild(el('span', { class: 'age-pill ' + rc.cls, title: 'Compromiso: ' + fmtFecha(p.fecha_resolucion) }, rc.label));
     var sel = el('select', { class: 'mini', title: 'Cuadrante de Eisenhower' });
     [['', '— Cuadrante —'], ['hacer', 'Hazlo ya'], ['planificar', 'Planifícalo'], ['delegar', 'Delégalo'], ['eliminar', 'Elimínalo']]
       .forEach(function (o) { sel.appendChild(el('option', { value: o[0] }, o[1])); });
@@ -1571,8 +1573,56 @@
     return row;
   }
 
+  // Riesgo de incumplimiento según la fecha de compromiso (fecha_resolucion).
+  function riesgoPend(p) {
+    if (!p.fecha_resolucion) return null;
+    var d = new Date(String(p.fecha_resolucion).slice(0, 10) + 'T00:00:00'); if (isNaN(d)) return null;
+    var dias = Math.floor((d.getTime() - Date.now()) / 86400000);
+    if (dias < 0) return { label: 'Vencido ' + (-dias) + 'd', cls: 'age-bad' };
+    if (dias <= 3) return { label: 'Vence en ' + dias + 'd', cls: 'age-warn' };
+    return { label: 'Vence en ' + dias + 'd', cls: 'age-ok' };
+  }
+  function ejecutorTxt(p) { return p.tecnico ? ('Ejecuta: ' + p.tecnico) : 'Sin ejecutor asignado'; }
+  function ultimoSeguimientoTxt(p) {
+    if (!Array.isArray(p.actualizaciones) || !p.actualizaciones.length) return 'sin seguimiento';
+    var last = p.actualizaciones[p.actualizaciones.length - 1];
+    var d = last && last.createdAt ? new Date(last.createdAt) : null;
+    if (!d || isNaN(d)) return '';
+    var dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+    return 'últ. seguimiento ' + (dias <= 0 ? 'hoy' : ('hace ' + dias + 'd'));
+  }
+  // Registra un seguimiento (lo que empujaste) en la bitácora del pendiente.
+  function registrarSeguimiento(p) {
+    var txt = window.prompt('Registrar seguimiento de «' + (textoPend(p)).slice(0, 50) + '»\n(qué hiciste, con quién, resultado):', '');
+    if (txt == null || !txt.trim()) return;
+    if (!Array.isArray(p.actualizaciones)) p.actualizaciones = [];
+    p.actualizaciones.push({ id: uid(), texto: txt.trim(), createdAt: new Date().toISOString() });
+    p._updatedAt = new Date().toISOString();
+    guardarDB(); toast('Seguimiento registrado.', 'ok'); renderTripleFoco();
+  }
+  // Ítem unificado del foco/sapo: ejecutor, riesgo, estado, seguimiento y (opcional) reorden.
+  function focoItem(p, i, conReorden) {
+    var it = el('div', { class: 'foco-item' + (i === 0 ? ' sapo' : '') });
+    it.appendChild(el('span', { class: 'foco-num' }, i === 0 ? '🐸' : String(i + 1)));
+    var meta = [ejecutorTxt(p)];
+    if (equipoCorto(p.equipo)) meta.push(equipoCorto(p.equipo));
+    meta.push(ultimoSeguimientoTxt(p));
+    it.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(p)), el('div', { class: 'count-note' }, meta.filter(Boolean).join(' · '))]));
+    var r = riesgoPend(p); if (r) it.appendChild(el('span', { class: 'age-pill ' + r.cls, title: 'Fecha de compromiso: ' + fmtFecha(p.fecha_resolucion) }, r.label));
+    it.appendChild(selEstadoPend(p));
+    var bSeg = el('button', { class: 'btn btn-sm', title: 'Registrar seguimiento' }, '📝 Seguimiento'); bSeg.onclick = function () { registrarSeguimiento(p); };
+    it.appendChild(bSeg);
+    if (conReorden) {
+      var up = el('button', { class: 'btn btn-sm', title: 'Subir prioridad', 'aria-label': 'Subir' }, '▲'); up.onclick = function () { moveFoco(p, -1); };
+      var dn = el('button', { class: 'btn btn-sm', title: 'Bajar prioridad', 'aria-label': 'Bajar' }, '▼'); dn.onclick = function () { moveFoco(p, 1); };
+      var rm = el('button', { class: 'btn btn-sm btn-danger', title: 'Quitar del foco', 'aria-label': 'Quitar del foco' }, '✕'); rm.onclick = function () { removeFoco(p); };
+      it.appendChild(up); it.appendChild(dn); it.appendChild(rm);
+    }
+    return it;
+  }
+
   function renderTripleFoco() {
-    setTitulo('🎯 Triple Foco', 'Productividad de pendientes · Eisenhower + Ivy Lee + Cómete el Sapo');
+    setTitulo('🎯 Triple Foco', 'Seguimiento de pendientes · tú aseguras, el técnico ejecuta · Eisenhower + Ivy Lee + Sapo');
     configurarExport('Exportar pendientes', function () { exportarEtapa(ETAPAS_BY_ID['pendiente']); });
     contentEl.innerHTML = '';
 
@@ -1580,9 +1630,10 @@
     var foco = focoLista();
 
     contentEl.appendChild(el('div', { class: 'banner' },
-      'Tres métodos en uno: 1) clasifica con la Matriz de Eisenhower (urgencia/importancia); ' +
-      '2) arma tu Foco de hoy con hasta 6 tareas y ordénalas (Ivy Lee); ' +
-      '3) empieza por la #1, tu “sapo” (Cómete el Sapo, Brian Tracy).'));
+      'Reenfocado para tu rol: tú aseguras que se cumplan, el técnico (ejecutor) los realiza. ' +
+      '1) prioriza con la Matriz de Eisenhower; 2) elige hasta 6 pendientes para empujar hoy y ordénalos (Ivy Lee); ' +
+      '3) empieza por la #1, tu “sapo”: el seguimiento que no puede esperar (Cómete el Sapo). ' +
+      'En cada uno verás su ejecutor y el riesgo según la fecha de compromiso, y puedes registrar el seguimiento.'));
 
     if (!abiertos.length) {
       contentEl.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '✅'),
@@ -1595,37 +1646,20 @@
     // A) El sapo de hoy
     var sapo = foco[0] || null;
     var cardS = el('div', { class: 'card' });
-    cardS.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🐸 El sapo de hoy'), el('span', { class: 'desc' }, 'Tu tarea #1: cómetela primero')]));
+    cardS.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🐸 El sapo de hoy'), el('span', { class: 'desc' }, 'El seguimiento que no puede esperar: ocúpate primero')]));
     var bodyS = el('div', { class: 'card-body' });
-    if (sapo) {
-      var rowS = el('div', { class: 'foco-item sapo' });
-      rowS.appendChild(el('span', { class: 'foco-num' }, '🐸'));
-      rowS.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(sapo)), el('div', { class: 'count-note' }, (equipoCorto(sapo.equipo) || '') + (sapo.tecnico ? (' · ' + sapo.tecnico) : ''))]));
-      rowS.appendChild(selEstadoPend(sapo));
-      bodyS.appendChild(rowS);
-    } else {
-      bodyS.appendChild(el('div', { class: 'muted-empty' }, 'Aún no defines tu sapo. Añade tareas al «Foco de hoy» (abajo) y la #1 será tu sapo.'));
-    }
+    if (sapo) bodyS.appendChild(focoItem(sapo, 0, false));
+    else bodyS.appendChild(el('div', { class: 'muted-empty' }, 'Aún no defines tu sapo. Añade pendientes al «Foco de hoy» (abajo) y el #1 será tu sapo.'));
     cardS.appendChild(bodyS); contentEl.appendChild(cardS);
 
-    // B) Foco de hoy (Ivy Lee)
+    // B) Seguimientos de hoy (Ivy Lee)
     var cardF = el('div', { class: 'card' });
-    cardF.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🎯 Foco de hoy — Top 6 (Ivy Lee)'), el('span', { class: 'desc' }, foco.length + '/6 · trabaja de arriba abajo, una a la vez')]));
+    cardF.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🎯 Seguimientos de hoy — Top 6 (Ivy Lee)'), el('span', { class: 'desc' }, foco.length + '/6 · empuja de arriba abajo; cada uno tiene su ejecutor')]));
     var bodyF = el('div', { class: 'card-body' });
-    if (!foco.length) bodyF.appendChild(el('div', { class: 'muted-empty' }, 'Sin tareas en el foco. Añádelas desde la matriz de abajo con «➕ Foco».'));
+    if (!foco.length) bodyF.appendChild(el('div', { class: 'muted-empty' }, 'Sin pendientes en el foco. Añádelos desde la matriz de abajo con «➕ Foco».'));
     else {
       var listaF = el('div', { class: 'foco-list' });
-      foco.forEach(function (p, i) {
-        var it = el('div', { class: 'foco-item' + (i === 0 ? ' sapo' : '') });
-        it.appendChild(el('span', { class: 'foco-num' }, i === 0 ? '🐸' : String(i + 1)));
-        it.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(p)), el('div', { class: 'count-note' }, (equipoCorto(p.equipo) || '') + ' · ' + eisenLabelShort(p))]));
-        it.appendChild(selEstadoPend(p));
-        var up = el('button', { class: 'btn btn-sm', title: 'Subir', 'aria-label': 'Subir prioridad' }, '▲'); up.onclick = function () { moveFoco(p, -1); };
-        var dn = el('button', { class: 'btn btn-sm', title: 'Bajar', 'aria-label': 'Bajar prioridad' }, '▼'); dn.onclick = function () { moveFoco(p, 1); };
-        var rm = el('button', { class: 'btn btn-sm btn-danger', title: 'Quitar del foco', 'aria-label': 'Quitar del foco' }, '✕'); rm.onclick = function () { removeFoco(p); };
-        it.appendChild(up); it.appendChild(dn); it.appendChild(rm);
-        listaF.appendChild(it);
-      });
+      foco.forEach(function (p, i) { listaF.appendChild(focoItem(p, i, true)); });
       bodyF.appendChild(listaF);
       var bVaciar = el('button', { class: 'btn' }, '🧹 Vaciar foco (nuevo día)');
       bVaciar.onclick = function () { if (!confirm('¿Vaciar el foco de hoy? Las tareas no se eliminan, solo salen del foco.')) return; DB.registros.pendiente.forEach(function (p) { p.foco = 0; }); guardarDB(); renderSidebar(); renderTripleFoco(); };
