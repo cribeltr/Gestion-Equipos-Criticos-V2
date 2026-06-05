@@ -161,3 +161,19 @@ las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:
 node --check app.js eventos_mp.js xlsx.js     # sintaxis
 # pruebas de DOM/funcionalidad con jsdom (ver el informe del PR)
 ```
+
+## 9. Triple Foco (productividad de pendientes)
+
+Gestión de pendientes combinando tres métodos en una vista **🎯 Triple Foco**:
+- **Matriz de Eisenhower:** clasifica cada pendiente en un cuadrante (Hazlo ya /
+  Planifícalo / Delégalo / Elimínalo) por urgencia e importancia.
+- **Método Ivy Lee:** «Foco de hoy» con hasta **6 tareas** ordenadas por
+  prioridad (subir/bajar), para trabajar de arriba abajo, una a la vez.
+- **Cómete el Sapo (Brian Tracy):** la tarea **#1** del foco es el «sapo» 🐸,
+  destacada para hacerla primero.
+
+El estado de cada pendiente (No iniciado/En proceso/Resuelto) se cambia en línea;
+al resolver, sale del foco. Acceso desde el menú y desde la vista Pendientes.
+
+Pruebas automatizadas de esta iteración: **13/13** (crear, clasificar, armar el
+foco, sapo, badge y reordenar/quitar).

@@ -552,3 +552,41 @@ select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 
   table.data th { color: #000; }
   a[href]::after { content: ''; }
 }
+
+/* ---------- Triple Foco (Eisenhower + Ivy Lee + Cómete el Sapo) ---------- */
+.foco-list { display: flex; flex-direction: column; gap: 6px; }
+.foco-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--gris-borde); border-radius: 6px; background: #fff;
+}
+.foco-item.sapo { border-color: var(--verde); background: #f3faf6; }
+.foco-num {
+  width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
+  background: var(--azul); color: #fff; font-weight: 700; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.foco-item.sapo .foco-num { background: transparent; font-size: 18px; }
+.foco-tx { flex: 1; min-width: 0; }
+.foco-tx .d, .pend-chip .tx .d { font-weight: 600; overflow-wrap: anywhere; }
+
+.eisen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .eisen-grid { grid-template-columns: 1fr; } }
+.eisen-cell { border: 1px solid var(--gris-borde); border-radius: var(--radio); background: #fff; overflow: hidden; }
+.eisen-cell .h {
+  padding: 9px 12px; color: #fff; font-weight: 600; font-size: 13.5px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.eisen-cell .h .n { background: rgba(255,255,255,.25); border-radius: 10px; padding: 0 8px; font-size: 12px; }
+.eisen-cell.q-hacer .h { background: var(--rojo); }
+.eisen-cell.q-planificar .h { background: var(--azul); }
+.eisen-cell.q-delegar .h { background: var(--ambar); }
+.eisen-cell.q-eliminar .h { background: #6b7780; }
+.eisen-body { padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 46px; }
+.eisen-body .sub { font-size: 11px; color: var(--gris-texto); margin-bottom: 2px; }
+
+.pend-chip {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 8px; border: 1px solid var(--gris-borde); border-radius: 6px; background: var(--gris-bg); font-size: 12.5px;
+}
+.pend-chip .tx { flex: 1; min-width: 140px; }
+.pend-chip select.mini { flex-shrink: 0; }

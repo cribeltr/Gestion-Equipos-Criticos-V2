@@ -203,7 +203,7 @@
     { label: 'Inicio', items: ['__dashboard', '__inventario'] },
     { label: 'Estado de equipos', items: ['__est_st', '__est_operativo', '__est_no_operativo', '__est_baja', '__pendientes', '__est_desconocido'] },
     { label: 'Mantención preventiva', items: ['__mp_import', 'mp'] },
-    { label: 'Gestión', items: ['__todos', '__config'] }
+    { label: 'Gestión', items: ['__foco', '__todos', '__config'] }
   ];
   // Nota: las etapas del flujo correctivo (solicitud, envío, estado_st, recepción,
   // diagnóstico, cotización, gestión_oc, emisión_oc, reparación, cierre) ya no
@@ -660,6 +660,7 @@
     else if (ESTADO_VIEWS[STATE.view]) renderInventario(ESTADO_VIEWS[STATE.view]);
     else if (STATE.view === '__mp_import') renderMPImport();
     else if (STATE.view === '__pendientes') renderPendientes();
+    else if (STATE.view === '__foco') renderTripleFoco();
     else if (STATE.view === '__todos') renderTodos();
     else if (STATE.view === '__config') renderConfig();
     else renderEtapa(STATE.view);
@@ -687,6 +688,7 @@
         else if (id === '__mp_import') { label = 'Importar programación MP'; icono = '📥'; }
         else if (id === '__pendientes') { label = 'Pendientes'; icono = '⚠️'; badge = pendientesAbiertos(); badgeTitle = 'pendientes sin resolver'; }
         else if (id === '__todos') { label = 'Todos los registros'; icono = '🗂️'; badge = totalRegistros(); }
+        else if (id === '__foco') { label = 'Triple Foco'; icono = '🎯'; badge = focoLista().length; badgeTitle = 'tareas en el foco de hoy'; }
         else if (id === '__config') { label = 'Configuración'; icono = '⚙️'; }
         else {
           var et = ETAPAS_BY_ID[id]; label = et.nombre; icono = et.icono;
@@ -1427,8 +1429,9 @@
     ['Otro', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo'].forEach(function (o) { selT.appendChild(el('option', { value: o }, o)); });
     toolbar.appendChild(search); toolbar.appendChild(selE); toolbar.appendChild(selT);
     toolbar.appendChild(el('div', { class: 'spacer' }));
+    var bFoco = el('button', { class: 'btn btn-primary', title: 'Gestionar con Eisenhower + Ivy Lee + Cómete el Sapo' }, '🎯 Triple Foco'); bFoco.onclick = function () { navegar('__foco'); };
     var bExp = el('button', { class: 'btn' }, '⬇️ Exportar'); bExp.onclick = function () { exportarEtapa(etapa); };
-    toolbar.appendChild(bExp); body2.appendChild(toolbar);
+    toolbar.appendChild(bFoco); toolbar.appendChild(bExp); body2.appendChild(toolbar);
     var cont = el('div'); body2.appendChild(cont);
 
     function pintar() {
@@ -1476,6 +1479,156 @@
     search.addEventListener('input', pintar); selE.addEventListener('change', pintar); selT.addEventListener('change', pintar);
     pintar();
     card2.appendChild(body2); contentEl.appendChild(card2);
+  }
+
+  // ========================================================== Triple Foco
+  // Productividad de pendientes combinando Eisenhower + Ivy Lee + Cómete el Sapo.
+  var EISEN_META = {
+    hacer:      { label: 'Hazlo ya',    sub: 'Urgente e importante',       cls: 'q-hacer' },
+    planificar: { label: 'Planifícalo', sub: 'Importante, no urgente',     cls: 'q-planificar' },
+    delegar:    { label: 'Delégalo',    sub: 'Urgente, no importante',     cls: 'q-delegar' },
+    eliminar:   { label: 'Elimínalo',   sub: 'Ni urgente ni importante',   cls: 'q-eliminar' }
+  };
+  function pendAbiertos() { return DB.registros.pendiente.filter(function (p) { return (p.estado_pendiente || 'Pendiente') !== 'Resuelto'; }); }
+  function focoLista() { return DB.registros.pendiente.filter(function (p) { return p.foco && (p.estado_pendiente || 'Pendiente') !== 'Resuelto'; }).sort(function (a, b) { return (a.foco || 0) - (b.foco || 0); }); }
+  function renumberFoco() { focoLista().forEach(function (p, i) { p.foco = i + 1; }); }
+  function addFoco(p) {
+    if (p.foco) return;
+    var l = focoLista();
+    if (l.length >= 6) { toast('El foco de hoy ya tiene 6 tareas (Ivy Lee). Quita una para añadir otra.', 'err'); return; }
+    p.foco = l.length + 1; p._updatedAt = new Date().toISOString();
+    guardarDB(); renderSidebar(); renderTripleFoco();
+  }
+  function removeFoco(p) { p.foco = 0; renumberFoco(); guardarDB(); renderSidebar(); renderTripleFoco(); }
+  function moveFoco(p, dir) {
+    var l = focoLista(), i = l.indexOf(p), j = i + dir;
+    if (i < 0 || j < 0 || j >= l.length) return;
+    var t = l[i].foco; l[i].foco = l[j].foco; l[j].foco = t;
+    guardarDB(); renderTripleFoco();
+  }
+  function textoPend(p) { return p.observaciones || p.tipo || 'Pendiente'; }
+  function eisenLabelShort(p) { return (p.eisen && EISEN_META[p.eisen]) ? EISEN_META[p.eisen].label : 'Sin clasificar'; }
+
+  function selEstadoPend(p, after) {
+    var sel = el('select', { class: 'mini', title: 'Estado' });
+    ['Pendiente', 'En proceso', 'Resuelto'].forEach(function (o) { sel.appendChild(el('option', { value: o }, o)); });
+    sel.value = p.estado_pendiente || 'Pendiente';
+    sel.onchange = function () {
+      p.estado_pendiente = sel.value;
+      if (sel.value === 'Resuelto') { if (!p.fecha_resolucion) p.fecha_resolucion = hoyISO(); p.foco = 0; renumberFoco(); }
+      p._updatedAt = new Date().toISOString();
+      guardarDB(); renderSidebar(); (after || renderTripleFoco)();
+    };
+    return sel;
+  }
+
+  // Fila de pendiente para la matriz / lista por clasificar: cuadrante + foco.
+  function chipPendiente(p) {
+    var row = el('div', { class: 'pend-chip' });
+    row.appendChild(el('div', { class: 'tx' }, [
+      el('div', { class: 'd' }, textoPend(p)),
+      el('div', { class: 'count-note' }, equipoCorto(p.equipo) || (p.tipo || '—'))
+    ]));
+    var sel = el('select', { class: 'mini', title: 'Cuadrante de Eisenhower' });
+    [['', '— Cuadrante —'], ['hacer', 'Hazlo ya'], ['planificar', 'Planifícalo'], ['delegar', 'Delégalo'], ['eliminar', 'Elimínalo']]
+      .forEach(function (o) { sel.appendChild(el('option', { value: o[0] }, o[1])); });
+    sel.value = p.eisen || '';
+    sel.onchange = function () { p.eisen = sel.value || undefined; p._updatedAt = new Date().toISOString(); guardarDB(); renderTripleFoco(); };
+    row.appendChild(sel);
+    var enFoco = !!p.foco;
+    var fb = el('button', { class: 'btn btn-sm' + (enFoco ? ' btn-primary' : ''), title: enFoco ? 'Quitar del foco de hoy' : 'Añadir al foco de hoy (Ivy Lee)' }, enFoco ? ('✓ Foco ' + p.foco) : '➕ Foco');
+    fb.onclick = function () { if (enFoco) removeFoco(p); else addFoco(p); };
+    row.appendChild(fb);
+    return row;
+  }
+
+  function renderTripleFoco() {
+    setTitulo('🎯 Triple Foco', 'Productividad de pendientes · Eisenhower + Ivy Lee + Cómete el Sapo');
+    configurarExport('Exportar pendientes', function () { exportarEtapa(ETAPAS_BY_ID['pendiente']); });
+    contentEl.innerHTML = '';
+
+    var abiertos = pendAbiertos();
+    var foco = focoLista();
+
+    contentEl.appendChild(el('div', { class: 'banner' },
+      'Tres métodos en uno: 1) clasifica con la Matriz de Eisenhower (urgencia/importancia); ' +
+      '2) arma tu Foco de hoy con hasta 6 tareas y ordénalas (Ivy Lee); ' +
+      '3) empieza por la #1, tu “sapo” (Cómete el Sapo, Brian Tracy).'));
+
+    if (!abiertos.length) {
+      contentEl.appendChild(el('div', { class: 'empty-state' }, [el('div', { class: 'big' }, '✅'),
+        el('div', {}, 'No hay pendientes abiertos. Crea pendientes en la sección «Pendientes».')]));
+      var bP = el('button', { class: 'btn btn-primary' }, '⚠️ Ir a Pendientes'); bP.onclick = function () { navegar('__pendientes'); };
+      contentEl.appendChild(el('div', { class: 'form-actions' }, [bP]));
+      return;
+    }
+
+    // A) El sapo de hoy
+    var sapo = foco[0] || null;
+    var cardS = el('div', { class: 'card' });
+    cardS.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🐸 El sapo de hoy'), el('span', { class: 'desc' }, 'Tu tarea #1: cómetela primero')]));
+    var bodyS = el('div', { class: 'card-body' });
+    if (sapo) {
+      var rowS = el('div', { class: 'foco-item sapo' });
+      rowS.appendChild(el('span', { class: 'foco-num' }, '🐸'));
+      rowS.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(sapo)), el('div', { class: 'count-note' }, (equipoCorto(sapo.equipo) || '') + (sapo.tecnico ? (' · ' + sapo.tecnico) : ''))]));
+      rowS.appendChild(selEstadoPend(sapo));
+      bodyS.appendChild(rowS);
+    } else {
+      bodyS.appendChild(el('div', { class: 'muted-empty' }, 'Aún no defines tu sapo. Añade tareas al «Foco de hoy» (abajo) y la #1 será tu sapo.'));
+    }
+    cardS.appendChild(bodyS); contentEl.appendChild(cardS);
+
+    // B) Foco de hoy (Ivy Lee)
+    var cardF = el('div', { class: 'card' });
+    cardF.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🎯 Foco de hoy — Top 6 (Ivy Lee)'), el('span', { class: 'desc' }, foco.length + '/6 · trabaja de arriba abajo, una a la vez')]));
+    var bodyF = el('div', { class: 'card-body' });
+    if (!foco.length) bodyF.appendChild(el('div', { class: 'muted-empty' }, 'Sin tareas en el foco. Añádelas desde la matriz de abajo con «➕ Foco».'));
+    else {
+      var listaF = el('div', { class: 'foco-list' });
+      foco.forEach(function (p, i) {
+        var it = el('div', { class: 'foco-item' + (i === 0 ? ' sapo' : '') });
+        it.appendChild(el('span', { class: 'foco-num' }, i === 0 ? '🐸' : String(i + 1)));
+        it.appendChild(el('div', { class: 'foco-tx' }, [el('div', { class: 'd' }, textoPend(p)), el('div', { class: 'count-note' }, (equipoCorto(p.equipo) || '') + ' · ' + eisenLabelShort(p))]));
+        it.appendChild(selEstadoPend(p));
+        var up = el('button', { class: 'btn btn-sm', title: 'Subir', 'aria-label': 'Subir prioridad' }, '▲'); up.onclick = function () { moveFoco(p, -1); };
+        var dn = el('button', { class: 'btn btn-sm', title: 'Bajar', 'aria-label': 'Bajar prioridad' }, '▼'); dn.onclick = function () { moveFoco(p, 1); };
+        var rm = el('button', { class: 'btn btn-sm btn-danger', title: 'Quitar del foco', 'aria-label': 'Quitar del foco' }, '✕'); rm.onclick = function () { removeFoco(p); };
+        it.appendChild(up); it.appendChild(dn); it.appendChild(rm);
+        listaF.appendChild(it);
+      });
+      bodyF.appendChild(listaF);
+      var bVaciar = el('button', { class: 'btn' }, '🧹 Vaciar foco (nuevo día)');
+      bVaciar.onclick = function () { if (!confirm('¿Vaciar el foco de hoy? Las tareas no se eliminan, solo salen del foco.')) return; DB.registros.pendiente.forEach(function (p) { p.foco = 0; }); guardarDB(); renderSidebar(); renderTripleFoco(); };
+      bodyF.appendChild(el('div', { class: 'form-actions' }, [bVaciar]));
+    }
+    cardF.appendChild(bodyF); contentEl.appendChild(cardF);
+
+    // C) Matriz de Eisenhower
+    var cardM = el('div', { class: 'card' });
+    cardM.appendChild(el('div', { class: 'card-head' }, [el('h3', {}, '🗂️ Matriz de Eisenhower'), el('span', { class: 'desc' }, 'Clasifica por urgencia e importancia, luego lleva las clave al foco')]));
+    var bodyM = el('div', { class: 'card-body' });
+    var sinClasif = abiertos.filter(function (p) { return !p.eisen; });
+    if (sinClasif.length) {
+      bodyM.appendChild(el('div', { class: 'hint' }, 'Por clasificar (' + sinClasif.length + '): asigna cada pendiente a un cuadrante.'));
+      var scWrap = el('div', { class: 'foco-list', style: 'margin:6px 0 14px' });
+      sinClasif.forEach(function (p) { scWrap.appendChild(chipPendiente(p)); });
+      bodyM.appendChild(scWrap);
+    }
+    var grid = el('div', { class: 'eisen-grid' });
+    ['hacer', 'planificar', 'delegar', 'eliminar'].forEach(function (q) {
+      var meta = EISEN_META[q];
+      var items = abiertos.filter(function (p) { return p.eisen === q; });
+      var cell = el('div', { class: 'eisen-cell ' + meta.cls });
+      cell.appendChild(el('div', { class: 'h' }, [el('span', {}, meta.label), el('span', { class: 'n' }, String(items.length))]));
+      var cb = el('div', { class: 'eisen-body' });
+      cb.appendChild(el('div', { class: 'sub' }, meta.sub));
+      if (!items.length) cb.appendChild(el('div', { class: 'muted-empty' }, '—'));
+      else items.forEach(function (p) { cb.appendChild(chipPendiente(p)); });
+      cell.appendChild(cb); grid.appendChild(cell);
+    });
+    bodyM.appendChild(grid);
+    cardM.appendChild(bodyM); contentEl.appendChild(cardM);
   }
 
   // --------------------------------------------------------------- Etapa view
