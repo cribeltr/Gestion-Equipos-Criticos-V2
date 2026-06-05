@@ -2231,9 +2231,22 @@
     var mt = document.getElementById('menuToggle');
     var sb = document.getElementById('sidebar');
     var bd = document.getElementById('backdrop');
+    var appEl = document.querySelector('.app');
+    function esMovil() { return window.matchMedia('(max-width: 820px)').matches; }
+    // Restaurar estado plegado (solo aplica en escritorio).
+    try { if (localStorage.getItem('gec_navcol') === '1') appEl.classList.add('nav-collapsed'); } catch (e) {}
     mt.onclick = function () {
-      var abierto = sb.classList.toggle('open'); bd.classList.toggle('show');
-      mt.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+      if (esMovil()) {
+        // Móvil: menú deslizable con fondo oscuro.
+        var abierto = sb.classList.toggle('open'); bd.classList.toggle('show');
+        mt.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+      } else {
+        // Escritorio: plegar/desplegar para dar ancho a las tablas.
+        var col = appEl.classList.toggle('nav-collapsed');
+        try { localStorage.setItem('gec_navcol', col ? '1' : '0'); } catch (e) {}
+        mt.setAttribute('aria-expanded', col ? 'false' : 'true');
+        mt.setAttribute('title', col ? 'Mostrar el menú' : 'Ocultar el menú');
+      }
     };
     bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); mt.setAttribute('aria-expanded', 'false'); };
 
