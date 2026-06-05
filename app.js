@@ -229,6 +229,7 @@
   var DB = cargarDB();
   var STATE = { view: '__dashboard', editId: null, prefill: null };
   var MP_STATE = { events: null, year: '', equipos: null, stats: null }; // último .xlsm procesado
+  var INV_BUSQUEDA = ''; // recuerda el texto buscado en inventario/estados al navegar (sesión)
 
   // Marca de datos comprimidos: carácter de control (0x01) que no aparece ni en el
   // JSON (empieza por '{') ni en la salida de compressToUTF16 (códigos ≥ 32).
@@ -256,23 +257,55 @@
     return db;
   }
 
-  // Guarda comprimido (cabe mucho más en la cuota de localStorage). Si falla por
-  // cuota u otro motivo, informa con un aviso claro en vez de romper la app.
-  function guardarDB() {
+  // Intenta escribir el payload en localStorage. Devuelve 'ok', 'cuota' o
+  // 'error:<mensaje>' para que quien llama decida cómo recuperarse.
+  function intentarEscribirDB(payload) {
     try {
-      var json = JSON.stringify(DB);
-      var payload = tieneLZ() ? (lzMark() + window.LZString.compressToUTF16(json)) : json;
       localStorage.setItem(STORAGE_KEY, payload);
-      return true;
+      return 'ok';
     } catch (e) {
       var esCuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || /quota|exceeded/i.test(e.message || ''));
-      if (esCuota) {
-        toast('Almacenamiento local lleno: no se pudo guardar. Descargue un respaldo (Configuración → Descargar respaldo) y libere espacio, por ejemplo «Vaciar mantenciones preventivas».', 'err');
-      } else {
-        toast('No se pudo guardar localmente: ' + (e && e.message ? e.message : e), 'err');
-      }
-      return false;
+      return esCuota ? 'cuota' : ('error:' + (e && e.message ? e.message : e));
     }
+  }
+  // Libera almacenamiento NO esencial (grabación de uso y claves heredadas de
+  // versiones previas) para dejar sitio a la base de datos. No toca la BD ni el
+  // respaldo del usuario. Devuelve true si liberó algo.
+  function liberarEspacioNoEsencial() {
+    var liberado = false;
+    ['gec_rec', 'hhha_v1_data', 'hhha_v1', 'gec_rec_bak'].forEach(function (k) {
+      if (k === STORAGE_KEY) return;
+      try { if (localStorage.getItem(k) != null) { localStorage.removeItem(k); liberado = true; } } catch (e) { }
+    });
+    return liberado;
+  }
+  var _quotaAvisado = false; // para no repetir el aviso de cuota en cada guardado
+
+  // Guarda comprimido (cabe mucho más en la cuota de localStorage). Si se llena,
+  // libera espacio no esencial y reintenta; si aun así falla, avisa UNA sola vez
+  // (no en cada guardado) y devuelve false para que quien llama no muestre éxito.
+  function guardarDB() {
+    var json;
+    try { json = JSON.stringify(DB); }
+    catch (e) { toast('No se pudieron preparar los datos para guardar: ' + (e && e.message ? e.message : e), 'err'); return false; }
+    var payload = tieneLZ() ? (lzMark() + window.LZString.compressToUTF16(json)) : json;
+
+    var r = intentarEscribirDB(payload);
+    if (r === 'ok') { _quotaAvisado = false; return true; }
+    if (r.charAt(0) === 'e') { toast('No se pudo guardar localmente: ' + r.slice(6), 'err'); return false; }
+
+    // Cuota excedida: liberar espacio no esencial y reintentar una vez.
+    if (liberarEspacioNoEsencial() && intentarEscribirDB(payload) === 'ok') {
+      _quotaAvisado = false;
+      if (REC.on) { REC.on = false; if (REC.timer) { clearInterval(REC.timer); REC.timer = null; } btnGrabRefrescar(); }
+      toast('Almacenamiento casi lleno: se descartó la grabación de uso para poder guardar. Descargue un respaldo y libere espacio.', 'warn');
+      return true;
+    }
+    if (!_quotaAvisado) {
+      _quotaAvisado = true;
+      toast('Almacenamiento local lleno: no se pudo guardar. Descargue un respaldo (Configuración → Descargar respaldo) y libere espacio, por ejemplo «Vaciar mantenciones preventivas».', 'err');
+    }
+    return false;
   }
 
   // Tamaño aproximado del almacenamiento usado por la app (en KB).
@@ -1142,6 +1175,7 @@
 
     var toolbar = el('div', { class: 'toolbar' });
     var search = el('input', { type: 'search', placeholder: 'Buscar por inventario, equipo, serie, marca, servicio, ubicación…' });
+    search.value = INV_BUSQUEDA; // recuerda lo último buscado al volver a esta vista
     var selEstado = el('select', { 'aria-label': 'Filtrar por estado' });
     [['', 'Todos los estados'], ['Operativo', 'Operativo'], ['No operativo', 'No operativo'], ['Servicio técnico', 'En servicio técnico'], ['Baja', 'Baja'], ['Desconocido', 'Desconocido']]
       .forEach(function (o) { selEstado.appendChild(el('option', { value: o[0] }, o[1])); });
@@ -1240,7 +1274,7 @@
       wrap.appendChild(t);
       cont.appendChild(wrap);
     }
-    search.addEventListener('input', pintar);
+    search.addEventListener('input', function () { INV_BUSQUEDA = search.value; pintar(); });
     // El desplegable navega a la vista de estado correspondiente (sincroniza panel y título).
     selEstado.addEventListener('change', function () {
       var v = selEstado.value;
@@ -1556,8 +1590,9 @@
       try {
         var rec = collectForm(etapa, form.controls);
         rec._id = uid(); rec._stage = 'pendiente'; rec._createdAt = new Date().toISOString(); rec.tareas = []; rec.actualizaciones = [];
-        autoaprenderEmpresa(rec); DB.registros.pendiente.push(rec); guardarDB();
-        toast('Pendiente registrado.', 'ok'); renderPendientes(); renderSidebar(); window.scrollTo({ top: 0, behavior: 'smooth' });
+        autoaprenderEmpresa(rec); DB.registros.pendiente.push(rec);
+        if (guardarDB()) toast('Pendiente registrado.', 'ok');
+        renderPendientes(); renderSidebar(); window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (err) { toast(err.message, 'err'); }
     };
     actions.appendChild(bg); body.appendChild(actions); card.appendChild(body); contentEl.appendChild(card);
@@ -1645,8 +1680,9 @@
         if (p.eisen != null) rec.eisen = p.eisen;
         var idx = DB.registros.pendiente.findIndex(function (x) { return x._id === p._id; });
         if (idx >= 0) DB.registros.pendiente[idx] = rec; else DB.registros.pendiente.push(rec);
-        autoaprenderEmpresa(rec); guardarDB();
-        toast('Pendiente actualizado.', 'ok'); closeModal(); render();
+        autoaprenderEmpresa(rec);
+        if (guardarDB()) toast('Pendiente actualizado.', 'ok');
+        closeModal(); render();
       } catch (err) { toast(err.message, 'err'); }
     };
     var bc = el('button', { class: 'btn' }, 'Cancelar'); bc.onclick = closeModal;
@@ -1736,14 +1772,64 @@
     var dias = Math.floor((Date.now() - d.getTime()) / 86400000);
     return 'últ. seguimiento ' + (dias <= 0 ? 'hoy' : ('hace ' + dias + 'd'));
   }
+  // Frases frecuentes de seguimiento del supervisor (inserción rápida).
+  var SEG_RAPIDAS = ['Llamé al técnico para coordinar.', 'Reprogramado.', 'A la espera de repuesto/insumo.', 'Coordinado con el servicio clínico.', 'Pendiente de respuesta del proveedor.', 'Sin avances; reiteré la solicitud.'];
   // Registra un seguimiento (lo que empujaste) en la bitácora del pendiente.
+  // Modal con área de texto, frases rápidas y cambio de estado en un solo paso
+  // (reemplaza el window.prompt, que era lento y no permitía pegar ni editar).
   function registrarSeguimiento(p) {
-    var txt = window.prompt('Registrar seguimiento de «' + (textoPend(p)).slice(0, 50) + '»\n(qué hiciste, con quién, resultado):', '');
-    if (txt == null || !txt.trim()) return;
-    if (!Array.isArray(p.actualizaciones)) p.actualizaciones = [];
-    p.actualizaciones.push({ id: uid(), texto: txt.trim(), createdAt: new Date().toISOString() });
-    p._updatedAt = new Date().toISOString();
-    guardarDB(); toast('Seguimiento registrado.', 'ok'); render();
+    var box = el('div', { class: 'seg-modal' });
+    var ctx = [ejecutorTxt(p)];
+    if (p.responsable) ctx.push('Asegura: ' + p.responsable);
+    if (equipoCorto(p.equipo)) ctx.push(equipoCorto(p.equipo));
+    var rc = riesgoPend(p); if (rc) ctx.push(rc.label);
+    box.appendChild(el('div', { class: 'count-note', style: 'margin-bottom:8px' }, ctx.filter(Boolean).join(' · ')));
+
+    var ta = el('textarea', { class: 'seg-ta', rows: '4', placeholder: 'Qué hiciste, con quién y el resultado…', 'aria-label': 'Texto del seguimiento' });
+    box.appendChild(ta);
+
+    var chips = el('div', { class: 'seg-chips' });
+    SEG_RAPIDAS.forEach(function (frase) {
+      var c = el('button', { type: 'button', class: 'btn btn-sm seg-chip', title: 'Insertar' }, frase);
+      c.onclick = function () { ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + ' ' : '') + frase; ta.focus(); };
+      chips.appendChild(c);
+    });
+    box.appendChild(chips);
+
+    var fila = el('div', { class: 'seg-estado' });
+    fila.appendChild(el('label', {}, 'Estado del pendiente:'));
+    var selE = el('select', { class: 'mini' });
+    ['Pendiente', 'En proceso', 'Resuelto'].forEach(function (o) { selE.appendChild(el('option', { value: o }, o)); });
+    selE.value = p.estado_pendiente || 'Pendiente';
+    fila.appendChild(selE);
+    box.appendChild(fila);
+
+    var actions = el('div', { class: 'form-actions' });
+    var bg = el('button', { class: 'btn btn-primary' }, '💾 Guardar seguimiento');
+    function guardar() {
+      var txt = ta.value.trim();
+      if (!txt) { toast('Escribe el seguimiento.', 'err'); ta.focus(); return; }
+      if (!Array.isArray(p.actualizaciones)) p.actualizaciones = [];
+      p.actualizaciones.push({ id: uid(), texto: txt, createdAt: new Date().toISOString() });
+      if (selE.value !== (p.estado_pendiente || 'Pendiente')) {
+        p.estado_pendiente = selE.value;
+        if (selE.value === 'Resuelto') { if (!p.fecha_resolucion) p.fecha_resolucion = hoyISO(); p.foco = 0; renumberFoco(); }
+      }
+      p._updatedAt = new Date().toISOString();
+      var ok = guardarDB();
+      closeModal();
+      if (ok) toast('Seguimiento registrado.', 'ok');
+      render();
+    }
+    bg.onclick = guardar;
+    // Ctrl/Cmd+Enter guarda rápidamente desde el área de texto.
+    ta.addEventListener('keydown', function (ev) { if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); guardar(); } });
+    var bc = el('button', { class: 'btn' }, 'Cancelar'); bc.onclick = closeModal;
+    actions.appendChild(bg); actions.appendChild(bc);
+    box.appendChild(actions);
+
+    openModal('📌 Seguimiento · ' + textoPend(p).slice(0, 60), box);
+    setTimeout(function () { if (ta.focus) ta.focus(); }, 0);
   }
   // Ítem unificado del foco/sapo: ejecutor, riesgo, estado, seguimiento y (opcional) reorden.
   function focoItem(p, i, conReorden) {
@@ -1975,6 +2061,7 @@
           // desajuste posible. La MP manual no se sobrescribe al importar.
           rec._origen = 'manual';
         }
+        var editandoAhora = !!editando;
         if (editando) {
           rec._id = editando._id; rec._stage = id; rec._createdAt = editando._createdAt; rec._updatedAt = new Date().toISOString();
           // Conserva la gestión del evento (tareas y bitácora) al editar sus campos.
@@ -1982,14 +2069,13 @@
           if (Array.isArray(editando.actualizaciones)) rec.actualizaciones = editando.actualizaciones;
           var idx = DB.registros[id].findIndex(function (r) { return r._id === editando._id; });
           if (idx >= 0) DB.registros[id][idx] = rec; else DB.registros[id].push(rec);
-          toast('Registro actualizado.', 'ok');
         } else {
           rec._id = uid(); rec._stage = id; rec._createdAt = new Date().toISOString();
           DB.registros[id].push(rec);
-          toast('Registro de «' + etapa.nombre + '» creado.', 'ok');
         }
         autoaprenderEmpresa(rec);
-        guardarDB();
+        // El aviso de éxito solo si REALMENTE se guardó (si no, guardarDB ya avisó).
+        if (guardarDB()) toast(editandoAhora ? 'Registro actualizado.' : ('Registro de «' + etapa.nombre + '» creado.'), 'ok');
         STATE.editId = null;
         renderEtapa(id);
         renderSidebar(); // refresca los contadores de trabajo abierto
@@ -2699,10 +2785,12 @@
     if (!confirm('Se actualizarán SOLO el inventario y los resultados de las mantenciones preventivas (actualiza, no duplica).\n\nNO se modifican los pendientes ni los eventos registrados a mano en el programa (incluidas las mantenciones que hayas creado o editado manualmente).\n\n¿Continuar?')) return;
     var resEq = actualizarEquipos(MP_STATE.equipos || []);
     var resEv = importarEventosMP(MP_STATE.events, MP_STATE.year);
-    guardarDB();
+    var guardado = guardarDB();
     var msg = 'Inventario: ' + resEq.actualizados + ' actualizados, ' + resEq.nuevos + ' nuevos · Mantenciones: ' + resEv.nuevos + ' nuevas, ' + resEv.actualizados + ' actualizadas';
     if (resEv.preservados) msg += ', ' + resEv.preservados + ' preservadas (manuales)';
-    toast(msg + '.', 'ok');
+    // Solo declarar éxito si REALMENTE se guardó; si no, guardarDB ya avisó del problema.
+    if (guardado) toast(msg + '.', 'ok');
+    else toast('Importación NO guardada (almacenamiento lleno). ' + msg + '. Libere espacio y reintente.', 'err');
     navegar('__inventario');
   }
 

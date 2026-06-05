@@ -177,3 +177,35 @@ al resolver, sale del foco. Acceso desde el menú y desde la vista Pendientes.
 
 Pruebas automatizadas de esta iteración: **13/13** (crear, clasificar, armar el
 foco, sapo, badge y reordenar/quitar).
+
+## 10. Mejoras a partir de una grabación de uso real
+
+Se analizó una **grabación de uso** real (telemetría: vistas, clics y tiempos) junto
+con un respaldo y dos exportaciones a Excel. Hallazgos y correcciones:
+
+- **Falso «guardado con éxito» cuando el almacenamiento estaba lleno.** La grabación
+  mostró 7 errores «Almacenamiento local lleno» y, a la vez, un aviso de éxito al
+  importar la Programación MP. **Corregido:** todos los flujos de guardado (crear/editar
+  registro, crear/editar pendiente, importar MP) ahora **comprueban si realmente se
+  guardó** y solo entonces muestran el aviso de éxito; si falló, lo dicen con claridad.
+- **Recuperación automática de cuota.** Si `localStorage` se llena, la app **libera
+  espacio no esencial** (la grabación de uso y claves de versiones antiguas) y
+  **reintenta** guardar una vez. El aviso de cuota **ya no se repite** en cada intento
+  (se avisa una sola vez hasta que vuelve a guardarse bien).
+- **Registro de seguimiento más rápido.** La grabación mostró que registrar un
+  seguimiento con `prompt()` tardaba ~42 s y no permitía pegar ni editar cómodamente.
+  **Sustituido por un modal** con área de texto, **frases rápidas** de un clic
+  («Llamé al técnico…», «Reprogramado», «A la espera de repuesto…») y **cambio de
+  estado en el mismo paso**; **Ctrl/Cmd+Enter** guarda.
+- **Memoria de búsqueda en el inventario.** El usuario repitió la misma búsqueda de
+  inventario varias veces al ir y volver. Ahora el inventario y las vistas de estado
+  **recuerdan el texto buscado** durante la sesión.
+
+> Sobre la cuota: se verificó que la **compresión funciona** (un respaldo real de
+> 1,29 MB queda en **0,18 MB**), de modo que la base cabe de sobra; el error de cuota
+> del usuario fue ambiental (datos acumulados o límite de `file://`). Las mejoras hacen
+> que, si vuelve a ocurrir, la app **se recupere y nunca informe un éxito falso**.
+
+Pruebas automatizadas de esta iteración: **14/14** de cuota (incluye recuperación
+liberando espacio y no repetir el aviso) y **20/20** del flujo de seguimiento por
+modal. Regresión global de las suites vigentes: **en verde**.

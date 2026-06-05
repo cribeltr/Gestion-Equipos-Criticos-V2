@@ -337,6 +337,7 @@ table.data td.acciones { white-space: nowrap; }
 }
 .toast.ok { background: var(--verde); }
 .toast.err { background: var(--rojo); }
+.toast.warn { background: var(--ambar); }
 @keyframes slidein { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 /* ---------- Filtros ---------- */
@@ -590,6 +591,14 @@ select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 
 }
 .pend-chip .tx { flex: 1; min-width: 140px; }
 .pend-chip select.mini { flex-shrink: 0; }
+
+/* ---------- Modal de seguimiento ---------- */
+.seg-modal { display: flex; flex-direction: column; gap: 10px; min-width: min(520px, 86vw); }
+.seg-ta { width: 100%; resize: vertical; min-height: 76px; padding: 9px 11px; border: 1px solid var(--gris-borde); border-radius: 8px; font: inherit; }
+.seg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg-chip { font-size: 12px; padding: 4px 9px; }
+.seg-estado { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.seg-estado label { color: var(--gris-texto); }
 
 /* ---------- Grabación de sesión de uso ---------- */
 .btn.grabando { background: var(--rojo); border-color: var(--rojo); color: #fff; }
