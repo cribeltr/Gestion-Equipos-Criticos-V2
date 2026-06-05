@@ -209,3 +209,33 @@ con un respaldo y dos exportaciones a Excel. Hallazgos y correcciones:
 Pruebas automatizadas de esta iteración: **14/14** de cuota (incluye recuperación
 liberando espacio y no repetir el aviso) y **20/20** del flujo de seguimiento por
 modal. Regresión global de las suites vigentes: **en verde**.
+
+## 11. Rediseño centrado en el equipo (Buscar equipo)
+
+A partir del uso real (la importación de la Programación MP «no mostraba» las
+mantenciones y había que ir de ventana en ventana), se rediseñó el flujo:
+
+- **Diagnóstico de la importación:** se reprodujo la importación con el archivo real
+  (`PMP_2026` + `Registro_MP-2026`). El transformador extrae **966 equipos y 2.330
+  mantenciones** y **persisten tras recargar** (verificado con un round-trip en jsdom).
+  El mensaje «0 nuevas / 2.329 actualizadas» que vio el usuario significaba que esas
+  mantenciones **ya estaban cargadas** de una importación previa: no se perdió nada,
+  pero la app no las hacía visibles. El aviso ahora muestra **totales** («N equipos y
+  M mantenciones en el sistema»), no solo lo nuevo.
+- **Se eliminó la vista «Resumen».** El inicio ahora es **🔎 Buscar equipo**.
+- **Espacio de trabajo del equipo (en la misma pantalla):** se busca el equipo por
+  inventario, serie, nombre, marca o servicio; al elegirlo se abre, **sin ventanas**,
+  su espacio de trabajo con: datos, **registrar/editar mantención preventiva**,
+  **agregar/editar pendientes**, **registrar seguimiento**, cambiar estado e historial
+  completo. Los formularios van **incrustados** y con el **equipo fijado** (no hay que
+  re-seleccionarlo). El clic en una fila del **Inventario** también abre este espacio.
+- **Seguimiento:** se quitaron las «frases rápidas» (el área de texto basta).
+- Se unificó el guardado de registros en un único helper (`persistirRegistro`), de modo
+  que crear/editar desde el espacio de trabajo o desde las etapas conserva tareas,
+  bitácora y clasificación, y nunca duplica al editar.
+
+Pruebas automatizadas de esta iteración: **24/24** del nuevo flujo Buscar + espacio de
+trabajo (búsqueda, abrir, registrar MP en línea, agregar pendiente, editar sin
+duplicar, volver, y entrada desde Inventario), **8/8** del round-trip de importación
+real, y suites de regresión actualizadas (a11y/edición, series con ceros, export
+contextual). Regresión global: **19 suites en verde**.

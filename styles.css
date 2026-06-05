@@ -600,6 +600,33 @@ select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 
 .seg-estado { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .seg-estado label { color: var(--gris-texto); }
 
+/* ---------- Buscar equipo + espacio de trabajo ---------- */
+.buscar-bar { display: flex; align-items: center; gap: 8px; border: 2px solid var(--azul); border-radius: 12px; padding: 4px 12px; background: #fff; box-shadow: var(--sombra); }
+.buscar-ico { font-size: 18px; opacity: .8; }
+.buscar-input { flex: 1; border: 0; outline: none; font-size: 16px; padding: 10px 4px; background: transparent; }
+.buscar-zona { margin-top: 14px; }
+.eq-result-list { display: flex; flex-direction: column; gap: 6px; }
+.eq-result {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--gris-borde); border-radius: 8px; background: #fff; padding: 9px 12px; font: inherit;
+}
+.eq-result:hover, .eq-result:focus-visible { border-color: var(--azul); background: var(--azul-claro); }
+.eq-result .eq-main { flex: 1; min-width: 0; }
+.eq-result .eq-t { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.eq-result .eq-s { font-size: 12px; color: var(--gris-texto); }
+.eq-result .eq-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.eq-ws-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.eq-ws-title { margin: 0; font-size: 17px; color: var(--azul-osc); flex: 1; min-width: 200px; }
+.eq-ficha { margin-bottom: 12px; }
+.eq-ficha summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 600; padding: 4px 0; }
+.eq-ficha .ficha-grid { margin-top: 8px; }
+.eq-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--gris-borde); border-bottom: 1px solid var(--gris-borde); }
+.eq-form-area:not(:empty) { margin: 12px 0; }
+.eq-form-card { border: 1px solid var(--azul); }
+.equipo-fijo { padding: 8px 10px; background: var(--azul-claro); border: 1px dashed var(--azul); border-radius: 8px; font-size: 13.5px; }
+.equipo-fijo .ef-inv { font-weight: 700; color: var(--azul-osc); }
+.equipo-fijo .ef-nom { color: var(--gris-texto); }
+
 /* ---------- Grabación de sesión de uso ---------- */
 .btn.grabando { background: var(--rojo); border-color: var(--rojo); color: #fff; }
 .btn.grabando:hover { background: #a82418; }
