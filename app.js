@@ -2528,13 +2528,23 @@
       if (guardarDB()) toast('Mantenciones preventivas vaciadas.', 'ok');
       renderSidebar(); renderConfig();
     };
-    var bClear = el('button', { class: 'btn btn-danger' }, '🗑️ Borrar todos los registros');
-    bClear.onclick = function () {
-      if (!confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer. Se recomienda descargar un respaldo antes.')) return;
-      ETAPAS.forEach(function (e) { DB.registros[e.id] = []; });
-      guardarDB(); toast('Registros eliminados.'); navegar('__buscar');
+    var nEq = getEquipos().length;
+    var bClearInv = el('button', { class: 'btn btn-danger' }, '🗑️ Vaciar inventario de equipos');
+    bClearInv.onclick = function () {
+      if (!nEq) { toast('El inventario ya está vacío.', 'err'); return; }
+      if (!confirm('¿Vaciar el inventario de ' + nEq + ' equipos? Se eliminan los equipos (se pueden volver a cargar importando la Programación MP .xlsm). Los registros NO se tocan. Se recomienda descargar un respaldo antes.')) return;
+      DB.equiposOverrides = {}; invalidarEquipos();
+      if (guardarDB()) toast('Inventario de equipos vaciado.', 'ok');
+      renderSidebar(); navegar('__buscar');
     };
-    actions.appendChild(bExport); actions.appendChild(bBackup); actions.appendChild(bRestore); actions.appendChild(bClearMP); actions.appendChild(bClear);
+    var bClear = el('button', { class: 'btn btn-danger' }, '🗑️ Borrar todo (reiniciar)');
+    bClear.onclick = function () {
+      if (!confirm('¿Borrar TODO y reiniciar? Se eliminan los registros (mantenciones, pendientes, solicitudes…) Y el inventario de equipos. Esta acción no se puede deshacer. Se recomienda descargar un respaldo antes.')) return;
+      ETAPAS.forEach(function (e) { DB.registros[e.id] = []; });
+      DB.equiposOverrides = {}; invalidarEquipos();
+      guardarDB(); toast('Todo borrado: registros e inventario.'); navegar('__buscar');
+    };
+    actions.appendChild(bExport); actions.appendChild(bBackup); actions.appendChild(bRestore); actions.appendChild(bClearMP); actions.appendChild(bClearInv); actions.appendChild(bClear);
     body3.appendChild(actions);
     card3.appendChild(body3);
     contentEl.appendChild(card3);

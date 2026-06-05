@@ -239,3 +239,18 @@ trabajo (búsqueda, abrir, registrar MP en línea, agregar pendiente, editar sin
 duplicar, volver, y entrada desde Inventario), **8/8** del round-trip de importación
 real, y suites de regresión actualizadas (a11y/edición, series con ceros, export
 contextual). Regresión global: **19 suites en verde**.
+
+### 11.1 Ajustes de la misma iteración
+- **Encabezados de tabla que se «amontonaban».** Al ensanchar la tabla (barra lateral
+  plegada) los títulos se partían a media palabra («N° CARPET A», «REGIST ROS») por un
+  `word-break: break-word` en las celdas. Ahora los **encabezados envuelven solo entre
+  palabras** (`white-space: normal; word-break: normal; overflow-wrap: normal`), sin
+  cortes a media palabra; las celdas conservan el quiebre de tokens largos (series).
+- **Borrar registros dejaba 966 equipos en «Desconocido».** «Borrar todos los registros»
+  vaciaba los eventos pero no el inventario importado (`equiposOverrides`), dejando los
+  equipos sin eventos. Ahora hay alcances claros en Configuración: **«Vaciar inventario
+  de equipos»** (solo el inventario, reimportable), **«Borrar todo (reiniciar)»**
+  (registros + inventario) y la ya existente **«Vaciar mantenciones preventivas»**.
+
+Pruebas de estos ajustes: **6/6** de borrado por alcance. Regresión global: **20 suites
+en verde**.

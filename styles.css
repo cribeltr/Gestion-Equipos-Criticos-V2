@@ -249,8 +249,7 @@ table.data th, table.data td {
   text-align: left;
   border-bottom: 1px solid #eef2f5;
   vertical-align: top;
-  overflow-wrap: break-word;
-  word-break: break-word;
+  overflow-wrap: break-word; /* parte solo palabras muy largas (p. ej. series) */
 }
 /* Columnas cortas que conviene no partir (fechas, estados, números). */
 table.data td .pill, table.data td .age-pill, table.data td .tag-etapa { white-space: nowrap; }
@@ -262,6 +261,11 @@ table.data th {
   color: var(--gris-texto);
   position: sticky;
   top: 0;
+  /* Los encabezados envuelven SOLO entre palabras, nunca a media palabra
+     ("N° Inventario", "Registros"…). Evita el texto amontonado al ensanchar. */
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 table.data tbody tr:hover { background: #fafcfd; }
 table.data td.acciones { white-space: nowrap; }
