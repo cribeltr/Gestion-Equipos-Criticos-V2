@@ -394,8 +394,128 @@
     var cont = document.getElementById('toasts');
     var t = el('div', { class: 'toast ' + (tipo || '') }, msg);
     cont.appendChild(t);
+    grabLog('aviso', { mensaje: String(msg).slice(0, 140), tipo: tipo || '' });
     setTimeout(function () { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 2600);
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
+  }
+
+  // ===================================================== Grabación de sesión
+  // Registra vistas, clics, cambios, avisos y errores con su tiempo, para
+  // descargar un JSON que sirva de telemetría de uso (mejorar el sistema).
+  var REC = { on: false, start: 0, eventos: [], lastView: null, timer: null, tick: 0 };
+  var REC_MAX = 9000, REC_KEY = 'gec_rec';
+  function grabLog(tipo, datos) {
+    if (!REC.on || REC.eventos.length >= REC_MAX) return;
+    var ev = { t: Date.now() - REC.start, ts: new Date().toISOString(), tipo: tipo };
+    if (datos) for (var k in datos) ev[k] = datos[k];
+    REC.eventos.push(ev);
+  }
+  function grabVista() {
+    if (!REC.on) return;
+    var v = STATE.view; if (v === REC.lastView) return;
+    REC.lastView = v;
+    grabLog('vista', { view: v, titulo: viewTitleEl ? viewTitleEl.textContent : '' });
+  }
+  function descrControl(node) {
+    if (!node) return '';
+    if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') return (node.getAttribute('placeholder') || node.getAttribute('aria-label') || ('input[' + (node.type || 'text') + ']'));
+    if (node.tagName === 'SELECT') return (node.getAttribute('aria-label') || node.getAttribute('title') || 'select');
+    return (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 70);
+  }
+  function describirClic(e) {
+    var t = e.target;
+    var act = (t && t.closest) ? t.closest('button, a, select, input, textarea, [role="button"], .row-click, .stat, .step, .pend-chip, .eisen-cell, th, label') : t;
+    var node = act || t || {};
+    return {
+      tag: (node.tagName || '').toLowerCase(),
+      control: node.type || null,
+      texto: descrControl(node),
+      clase: (typeof node.className === 'string' ? node.className : '').slice(0, 60) || null,
+      id: node.id || null,
+      vista: STATE.view,
+      titulo: viewTitleEl ? viewTitleEl.textContent : ''
+    };
+  }
+  function btnGrabRefrescar() {
+    var b = document.getElementById('btnGrabar'); if (!b) return;
+    if (REC.on) {
+      var s = Math.floor((Date.now() - REC.start) / 1000);
+      b.textContent = '⏹️ Detener ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+      b.classList.add('grabando');
+      b.setAttribute('title', 'Detener la grabación y descargar el archivo');
+    } else {
+      b.textContent = '⏺️ Grabar';
+      b.classList.remove('grabando');
+      b.setAttribute('title', 'Grabar una sesión de uso (vistas, clics, tiempos) para mejorar el sistema');
+    }
+  }
+  function grabPersistir() {
+    if (!REC.on) return;
+    try {
+      var payload = JSON.stringify({ on: true, start: REC.start, lastView: REC.lastView, eventos: REC.eventos });
+      localStorage.setItem(REC_KEY, (typeof window !== 'undefined' && window.LZString) ? (String.fromCharCode(1) + window.LZString.compressToUTF16(payload)) : payload);
+    } catch (e) { }
+  }
+  function grabTimer() { if (REC.timer) clearInterval(REC.timer); REC.timer = setInterval(function () { REC.tick++; btnGrabRefrescar(); if (REC.tick % 5 === 0) grabPersistir(); }, 1000); }
+  function grabIniciar() {
+    REC.on = true; REC.start = Date.now(); REC.eventos = []; REC.lastView = null; REC.tick = 0;
+    grabLog('inicio', {
+      app: 'Gestión de Equipos Críticos', version: '2.0', fecha: new Date().toISOString(),
+      userAgent: (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
+      idioma: (typeof navigator !== 'undefined' ? navigator.language : ''),
+      pantalla: (typeof screen !== 'undefined' ? { w: screen.width, h: screen.height } : null),
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      registros: totalRegistros(), equipos: getEquipos().length
+    });
+    grabVista();
+    btnGrabRefrescar(); grabPersistir(); grabTimer();
+    toast('Grabación iniciada. Usa el sistema y luego pulsa «Detener».', 'ok');
+  }
+  function grabResumen() {
+    var porTipo = {}, vistas = {}, tiempoVista = {}, errores = 0, prevV = null, prevT = 0;
+    REC.eventos.forEach(function (ev) {
+      porTipo[ev.tipo] = (porTipo[ev.tipo] || 0) + 1;
+      if (ev.tipo === 'error') errores++;
+      if (ev.tipo === 'vista') {
+        vistas[ev.view] = (vistas[ev.view] || 0) + 1;
+        if (prevV != null) tiempoVista[prevV] = (tiempoVista[prevV] || 0) + (ev.t - prevT);
+        prevV = ev.view; prevT = ev.t;
+      }
+    });
+    var fin = REC.eventos.length ? REC.eventos[REC.eventos.length - 1].t : 0;
+    if (prevV != null) tiempoVista[prevV] = (tiempoVista[prevV] || 0) + (fin - prevT);
+    return { eventos: REC.eventos.length, duracionMs: fin, errores: errores, porTipo: porTipo, vistasVisitadas: vistas, tiempoPorVistaMs: tiempoVista };
+  }
+  function grabDescargar() {
+    var obj = { meta: { app: 'Gestión de Equipos Críticos', version: '2.0', generado: new Date().toISOString(), nota: 'Telemetría de uso (vistas, clics, tiempos, avisos, errores) para análisis y mejora del sistema.' }, resumen: grabResumen(), eventos: REC.eventos };
+    try {
+      var blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = el('a', { href: url, download: 'Grabacion_Uso_' + hoyISO() + '_' + Date.now().toString(36) + '.json' });
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    } catch (e) { toast('No se pudo generar el archivo: ' + (e && e.message ? e.message : e), 'err'); }
+  }
+  function grabDetener() {
+    if (!REC.on) return;
+    grabLog('fin', {});
+    REC.on = false; if (REC.timer) { clearInterval(REC.timer); REC.timer = null; }
+    btnGrabRefrescar();
+    grabDescargar();
+    try { localStorage.removeItem(REC_KEY); } catch (e) { }
+    toast('Grabación detenida (' + REC.eventos.length + ' eventos). Archivo descargado.', 'ok');
+  }
+  function grabRestaurar() {
+    try {
+      var raw = localStorage.getItem(REC_KEY); if (!raw) return;
+      var text = (raw.charAt(0) === String.fromCharCode(1) && window.LZString) ? window.LZString.decompressFromUTF16(raw.slice(1)) : raw;
+      var data = JSON.parse(text);
+      if (data && data.on) {
+        REC.on = true; REC.start = data.start || Date.now(); REC.eventos = data.eventos || []; REC.lastView = data.lastView || null; REC.tick = 0;
+        grabLog('reanudada', {});
+        btnGrabRefrescar(); grabTimer();
+      }
+    } catch (e) { }
   }
 
   // ------------------------------------------------------------- Selector eq.
@@ -688,6 +808,7 @@
     else if (STATE.view === '__todos') renderTodos();
     else if (STATE.view === '__config') renderConfig();
     else renderEtapa(STATE.view);
+    grabVista();
   }
 
   function renderSidebar() {
@@ -2594,6 +2715,19 @@
       }
     };
     bd.onclick = function () { sb.classList.remove('open'); bd.classList.remove('show'); mt.setAttribute('aria-expanded', 'false'); };
+
+    // ---- Grabación de sesión de uso ----
+    var btnG = document.getElementById('btnGrabar');
+    if (btnG) btnG.onclick = function () { if (REC.on) grabDetener(); else grabIniciar(); };
+    // Listeners globales (solo registran si hay grabación activa).
+    document.addEventListener('click', function (e) { if (REC.on) grabLog('clic', describirClic(e)); }, true);
+    document.addEventListener('change', function (e) {
+      if (!REC.on || !e.target) return;
+      grabLog('cambio', { control: descrControl(e.target), valor: (e.target.value != null ? String(e.target.value) : '').slice(0, 80), vista: STATE.view });
+    }, true);
+    window.addEventListener('error', function (ev) { if (REC.on) grabLog('error', { mensaje: (ev.message || 'Error'), archivo: ev.filename ? String(ev.filename).split('/').pop() : '', linea: ev.lineno || null }); });
+    window.addEventListener('beforeunload', function () { grabPersistir(); });
+    grabRestaurar(); // reanuda una grabación en curso tras recargar
 
     render();
   }

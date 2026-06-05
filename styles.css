@@ -590,3 +590,12 @@ select.mini { border: 1px solid var(--gris-borde); border-radius: 6px; padding: 
 }
 .pend-chip .tx { flex: 1; min-width: 140px; }
 .pend-chip select.mini { flex-shrink: 0; }
+
+/* ---------- Grabación de sesión de uso ---------- */
+.btn.grabando { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+.btn.grabando:hover { background: #a82418; }
+.btn.grabando::before {
+  content: ''; width: 9px; height: 9px; border-radius: 50%;
+  background: #fff; display: inline-block; animation: grabpulse 1s infinite;
+}
+@keyframes grabpulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
