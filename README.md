@@ -39,8 +39,11 @@ No requiere servidor, instalación ni conexión a internet: basta con abrir
   tablas, en «Todos los registros» y en la exportación.
 - **Técnicos desde lista desplegable** en todas las etapas (administrables en
   Configuración). Lista inicial tomada del documento de proceso (v2.0).
-- **Vínculo con el listado de equipos críticos** (965 equipos cargados como
-  referencia): busque por inventario, equipo, serie, marca, servicio o ubicación.
+- **Vínculo con el listado de equipos críticos.** El inventario **inicia vacío**:
+  los equipos se cargan al **importar la Programación de Mantenciones Preventivas
+  (`.xlsm`)** desde «Importar programación MP» (se extraen del Gantt y se
+  agregan/actualizan en el inventario). Una vez cargados, busque por inventario,
+  equipo, serie, marca, servicio o ubicación.
 - **Inventario de equipos con estado automático.** Vista del inventario completo
   con todas las columnas del listado (ID, N° Carpeta, N° Inventario, Equipo,
   Servicio, Unidad, Ubicación, Procedencia, Marca, Modelo, Serie) más el estado
@@ -113,5 +116,6 @@ la aplicación no fuerza estas reglas, solo organiza el registro.
 
 - Se generan archivos `.xlsx` reales (OOXML) mediante un escritor propio de ZIP
   (método *store*) y XML; abren en Excel, LibreOffice Calc y Google Sheets.
-- El listado de equipos se generó a partir de `Listado_de_equipos_Criticos.xlsx`.
-  Para actualizarlo, reemplace el contenido de `window.EQUIPOS` en `equipos.js`.
+- El inventario (`window.EQUIPOS` en `equipos.js`) **inicia vacío** y se puebla al
+  importar la Programación MP (`.xlsm`). Si desea precargar un listado fijo,
+  reemplace el contenido de `window.EQUIPOS` por el arreglo de equipos.
