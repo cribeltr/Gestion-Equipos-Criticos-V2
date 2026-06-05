@@ -254,3 +254,22 @@ contextual). Regresión global: **19 suites en verde**.
 
 Pruebas de estos ajustes: **6/6** de borrado por alcance. Regresión global: **20 suites
 en verde**.
+
+### 11.2 Re-importar ya no pierde el trabajo manual
+
+**Síntoma reportado:** se registraron mantenciones preventivas con el **técnico
+(ejecutor)** y, al **volver a subir la Programación MP**, el detalle se perdía.
+
+**Causa:** la importación solo respetaba las MP marcadas `_origen === 'manual'`. Una MP
+con datos del usuario pero con `_origen === 'import'` (versiones antiguas, o ciertos
+flujos) caía en la rama de actualización, que **reescribía el resultado** con el del
+`.xlsm` (a menudo «Pendiente»): el trabajo parecía perderse.
+
+**Solución (red de seguridad):** se considera "tocada a mano" cualquier MP con
+**ejecutor, observaciones, estado del equipo, tareas o bitácora**, además de las
+marcadas manual. Esas mantenciones se **conservan completas** al re-importar (incluido
+el resultado) y quedan marcadas como manual para protegerlas en el futuro. El aviso de
+importación indica cuántas mantenciones se **conservaron**.
+
+Pruebas: **9/9** (`smoke_reimport`) — preserva manual y manual-con-`_origen=import`, no
+duplica, y actualiza con normalidad las MP sin datos del usuario.

@@ -2875,9 +2875,23 @@
     return avisos.join('\n');
   }
 
+  // Una MP se considera "tocada a mano" (y por tanto NO se sobrescribe al
+  // re-importar) si está marcada manual O si tiene cualquier dato agregado por el
+  // usuario: ejecutor, observaciones, estado del equipo, tareas o bitácora.
+  // Red de seguridad: aunque _origen quedara como 'import' (versiones antiguas),
+  // el trabajo del usuario nunca se pierde al volver a subir el .xlsm.
+  function mpTocadaAMano(r) {
+    return r._origen === 'manual'
+      || (r.tecnico && String(r.tecnico).trim())
+      || (r.observaciones && String(r.observaciones).trim())
+      || (r.estado_equipo && String(r.estado_equipo).trim())
+      || (Array.isArray(r.tareas) && r.tareas.length > 0)
+      || (Array.isArray(r.actualizaciones) && r.actualizaciones.length > 0);
+  }
+
   // Importa eventos como registros MP (sin guardar/navegar); devuelve conteos.
   // Solo crea/actualiza mantenciones provenientes de la importación: NO toca las
-  // mantenciones creadas o editadas a mano (marcadas con _origen === 'manual').
+  // mantenciones creadas o editadas a mano (manual o con datos del usuario).
   function importarEventosMP(events, year) {
     var idx = {};
     DB.registros.mp.forEach(function (r) { idx[mpKey(r)] = r; });
@@ -2889,7 +2903,13 @@
       var fecha = mpFecha(anio, mes);
       var key = [equipo.inv, anio, mes, tipo].join('|');
       var ex = idx[key];
-      if (ex && ex._origen === 'manual') { preservados++; return; } // respeta lo registrado a mano
+      if (ex && mpTocadaAMano(ex)) {
+        // Trabajo del usuario: se conserva COMPLETO (incluido el resultado) y se
+        // deja marcado como manual para que futuras importaciones lo respeten.
+        if (ex._origen !== 'manual') ex._origen = 'manual';
+        preservados++;
+        return;
+      }
       if (ex) { ex.resultado = resultado; ex.fecha = fecha; ex.equipo = equipo; ex.anio = anio; ex._origen = 'import'; ex._updatedAt = new Date().toISOString(); actualizados++; }
       else {
         var rec = { _id: uid(), _stage: 'mp', _origen: 'import', _createdAt: new Date().toISOString(), equipo: equipo, fecha: fecha, anio: anio, mes: mes, tipo: tipo, resultado: resultado, observaciones: '', tareas: [], actualizaciones: [] };
