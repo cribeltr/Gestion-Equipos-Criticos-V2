@@ -273,3 +273,31 @@ importación indica cuántas mantenciones se **conservaron**.
 
 Pruebas: **9/9** (`smoke_reimport`) — preserva manual y manual-con-`_origen=import`, no
 duplica, y actualiza con normalidad las MP sin datos del usuario.
+
+## 12. Sin grabación + guardado en Google Sheets (octava iteración)
+
+- **Se eliminó el botón «Grabar»** (telemetría de uso) y todo su código.
+- **Guardado en Google Sheets** (opcional, en Configuración → «☁️ Guardar en
+  Google Sheets»). La copia local (localStorage) se mantiene como caché y Google
+  Sheets queda como respaldo central, accesible desde cualquier equipo:
+  - Se conecta mediante un **App web de Apps Script** (código incluido en la app y
+    en `google-apps-script.gs`). No requiere claves ni librerías: el App web se
+    ejecuta con la cuenta del usuario. Funciona desde `file://`.
+  - **Guardar:** `POST` (intenta CORS; si el navegador lo bloquea por el origen
+    `file://`, reintenta en modo `no-cors`). **Cargar/Probar:** JSONP (etiqueta
+    `<script>`), que evita los problemas de CORS desde `file://`.
+  - La hoja `_gec_datos` guarda el **estado exacto** (para volver a cargarlo);
+    `Registros` e `Inventario` son las **hojas legibles**.
+  - **Guardado automático** opcional (con anti-rebote) al cambiar datos, además de
+    «Guardar ahora», «Cargar desde Google Sheets» y «Probar conexión». Un chip en
+    la barra superior muestra el estado (Local / Guardando… / Guardado / Error).
+  - Al **cargar**, se conserva la URL de conexión de este equipo.
+
+Pruebas de esta iteración: **11/11** (`smoke_gs`): sin botón Grabar, tarjeta y
+código visibles, guardar URL, activar automático, `POST` con `datos` + filas
+legibles y `Content-Type: text/plain` (sin *preflight*), y carga vía JSONP que
+reemplaza la base conservando la conexión. Regresión: suites vigentes en verde.
+
+> Nota: Google Sheets es un servicio externo. La sincronización envía los datos a
+> la hoja del propio usuario (configuración explícita). La conexión se hace con un
+> App web publicado por el usuario; la app no incluye credenciales.
