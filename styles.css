@@ -100,7 +100,7 @@ body {
 .topbar .sub { color: var(--gris-texto); font-size: 12.5px; }
 .topbar .spacer { flex: 1; }
 
-.content { padding: 24px 28px 60px; max-width: 1680px; width: 100%; }
+.content { padding: 24px 28px 60px; max-width: none; width: 100%; }
 
 /* ---------- Botones ---------- */
 .btn {

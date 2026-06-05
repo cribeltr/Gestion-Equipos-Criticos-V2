@@ -186,7 +186,7 @@
       desc: 'Asunto pendiente asociado a un equipo, con seguimiento (estado, tareas y actualizaciones).',
       campos: [
         { key: 'equipo', label: 'Equipo (listado crítico)', tipo: 'equipo', col: 'full' },
-        { key: 'tipo', label: 'Tipo de pendiente', tipo: 'select', req: true, opciones: ['Otro', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo'], ancho: 20 },
+        { key: 'tipo', label: 'Tipo de pendiente', tipo: 'select', req: true, opciones: ['Gestión general', 'Documento faltante', 'Reprogramación MP', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo', 'Otro'], ancho: 22 },
         { key: 'fecha', label: 'Fecha', tipo: 'fecha', req: true, ancho: 14 },
         { key: 'estado_pendiente', label: 'Estado', tipo: 'select', opciones: ['Pendiente', 'En proceso', 'Resuelto'], def: 'Pendiente', ancho: 14 },
         { key: 'tecnico', label: 'Responsable', tipo: 'tecnico', ancho: 24 },
@@ -1426,7 +1426,7 @@
     var selE = el('select');
     [['', 'Todos los estados'], ['Pendiente', 'Pendiente'], ['En proceso', 'En proceso'], ['Resuelto', 'Resuelto']].forEach(function (o) { selE.appendChild(el('option', { value: o[0] }, o[1])); });
     var selT = el('select'); selT.appendChild(el('option', { value: '' }, 'Todos los tipos'));
-    ['Otro', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo'].forEach(function (o) { selT.appendChild(el('option', { value: o }, o)); });
+    ['Gestión general', 'Documento faltante', 'Reprogramación MP', 'Pauta de monitoreo', 'Firma', 'Reporte Interno', 'Reporte Externo', 'Otro'].forEach(function (o) { selT.appendChild(el('option', { value: o }, o)); });
     toolbar.appendChild(search); toolbar.appendChild(selE); toolbar.appendChild(selT);
     toolbar.appendChild(el('div', { class: 'spacer' }));
     var bFoco = el('button', { class: 'btn btn-primary', title: 'Gestionar con Eisenhower + Ivy Lee + Cómete el Sapo' }, '🎯 Triple Foco'); bFoco.onclick = function () { navegar('__foco'); };
@@ -1469,8 +1469,9 @@
         tr.appendChild(td(r.tareas.length ? (done + '/' + r.tareas.length) : '—'));
         var acc = el('td', { class: 'acciones' });
         var bG = el('button', { class: 'btn btn-sm' }, '🔧 Gestionar'); bG.onclick = function () { openEventoDetalle('pendiente', r._id); };
+        var bE = el('button', { class: 'btn btn-sm', title: 'Editar los campos del pendiente' }, '✏️ Editar'); bE.onclick = function () { abrirEditarPendiente(r); };
         var bD = el('button', { class: 'btn btn-sm btn-danger', title: 'Eliminar pendiente', 'aria-label': 'Eliminar pendiente' }, '🗑️'); bD.onclick = function () { if (!confirm('¿Eliminar este pendiente?')) return; DB.registros.pendiente = DB.registros.pendiente.filter(function (x) { return x._id !== r._id; }); guardarDB(); renderSidebar(); renderPendientes(); };
-        acc.appendChild(bG); acc.appendChild(document.createTextNode(' ')); acc.appendChild(bD);
+        acc.appendChild(bG); acc.appendChild(document.createTextNode(' ')); acc.appendChild(bE); acc.appendChild(document.createTextNode(' ')); acc.appendChild(bD);
         tr.appendChild(acc);
         tb.appendChild(tr);
       });
@@ -1479,6 +1480,34 @@
     search.addEventListener('input', pintar); selE.addEventListener('change', pintar); selT.addEventListener('change', pintar);
     pintar();
     card2.appendChild(body2); contentEl.appendChild(card2);
+  }
+
+  // Edición de un pendiente en un modal (en contexto, sin salir de la vista).
+  function abrirEditarPendiente(p) {
+    var etapa = ETAPAS_BY_ID['pendiente'];
+    var form = buildForm(etapa, p);
+    var box = el('div');
+    box.appendChild(form.grid);
+    var actions = el('div', { class: 'form-actions' });
+    var bg = el('button', { class: 'btn btn-primary' }, '💾 Guardar cambios');
+    bg.onclick = function () {
+      try {
+        var rec = collectForm(etapa, form.controls);
+        rec._id = p._id; rec._stage = 'pendiente'; rec._createdAt = p._createdAt; rec._updatedAt = new Date().toISOString();
+        if (Array.isArray(p.tareas)) rec.tareas = p.tareas;
+        if (Array.isArray(p.actualizaciones)) rec.actualizaciones = p.actualizaciones;
+        if (p.foco != null) rec.foco = p.foco;
+        if (p.eisen != null) rec.eisen = p.eisen;
+        var idx = DB.registros.pendiente.findIndex(function (x) { return x._id === p._id; });
+        if (idx >= 0) DB.registros.pendiente[idx] = rec; else DB.registros.pendiente.push(rec);
+        autoaprenderEmpresa(rec); guardarDB();
+        toast('Pendiente actualizado.', 'ok'); closeModal(); renderSidebar(); renderPendientes();
+      } catch (err) { toast(err.message, 'err'); }
+    };
+    var bc = el('button', { class: 'btn' }, 'Cancelar'); bc.onclick = closeModal;
+    actions.appendChild(bg); actions.appendChild(bc);
+    box.appendChild(actions);
+    openModal('✏️ Editar pendiente', box);
   }
 
   // ========================================================== Triple Foco
