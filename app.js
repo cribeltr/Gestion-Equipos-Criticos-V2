@@ -1310,8 +1310,7 @@
         var tr = el('tr');
         tr.appendChild(td(fmtFecha(r.fecha) || '—'));
         tr.appendChild(td(el('span', { class: 'tag-etapa' }, x.etapa.nombre)));
-        var er = estadoResultado(r);
-        tr.appendChild(td(er ? pillFor(estadoResultadoKey(r), er) : '—'));
+        tr.appendChild(td(celdaEstadoResultado(r)));
         tr.appendChild(td(r.tecnico || '—'));
         tr.appendChild(td(r.empresa || '—'));
         tr.appendChild(td(numeroDoc(r) || '—'));
@@ -1448,7 +1447,7 @@
     if (rec.equipo) resumen.appendChild(el('span', { class: 'count-note' }, equipoCorto(rec.equipo)));
     if (rec.fecha) resumen.appendChild(el('span', { class: 'count-note' }, '📅 ' + fmtFecha(rec.fecha)));
     if (rec.folio) resumen.appendChild(el('span', { class: 'count-note' }, 'Folio ' + rec.folio));
-    var er = estadoResultado(rec); if (er) resumen.appendChild(pillFor(estadoResultadoKey(rec), er));
+    resumen.appendChild(celdaEstadoResultado(rec));
     cont.appendChild(resumen);
 
     // Cambio rápido de estado para pendientes
@@ -2175,7 +2174,7 @@
         tr.appendChild(td(r.equipo ? (r.equipo.nombre || '—') : '—'));
         tr.appendChild(td(r.equipo ? (r.equipo.servicio || '—') : '—'));
         tr.appendChild(td(r.tecnico || '—'));
-        tr.appendChild(td(estadoResultado(r) ? pillFor(estadoResultadoKey(r), estadoResultado(r)) : '—'));
+        tr.appendChild(td(celdaEstadoResultado(r)));
         tr.appendChild(td(r.empresa || '—'));
         tr.appendChild(td(numeroDoc(r) || '—'));
         var acc = el('td', { class: 'acciones' });
@@ -2222,6 +2221,26 @@
     if (r.estado_pendiente) return 'estado_pendiente';
     if (r.estado) return 'estado'; if (r.estado_equipo) return 'estado_equipo'; if (r.resultado) return 'resultado';
     if (r.estado_final) return 'estado_final'; if (r.via) return 'via'; return '';
+  }
+  // Celda «Estado / Resultado»: para mantenciones muestra el RESULTADO y el
+  // ESTADO DEL EQUIPO por separado (son cosas distintas: p. ej. resultado «Si»
+  // pero equipo «No operativo»), evitando confundir uno con otro.
+  function celdaEstadoResultado(r) {
+    var esMP = (r._stage === 'mp') || (r.resultado && r.estado_equipo);
+    if (esMP && (r.resultado || r.estado_equipo)) {
+      var wrap = el('span', { style: 'display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center' });
+      if (r.resultado) { var pr = pillFor('resultado', r.resultado); pr.setAttribute('title', 'Resultado de la mantención'); wrap.appendChild(pr); }
+      if (r.estado_equipo) { var pe = pillFor('estado_equipo', r.estado_equipo); pe.setAttribute('title', 'Estado del equipo'); wrap.appendChild(pe); }
+      return wrap;
+    }
+    var er = estadoResultado(r);
+    return er ? pillFor(estadoResultadoKey(r), er) : document.createTextNode('—');
+  }
+  function estadoResultadoTexto(r) {
+    if (r._stage === 'mp' && (r.resultado || r.estado_equipo)) {
+      return [r.resultado ? ('Resultado: ' + r.resultado) : '', r.estado_equipo ? ('Estado: ' + r.estado_equipo) : ''].filter(Boolean).join(' · ');
+    }
+    return estadoResultado(r);
   }
   function numeroDoc(r) { return r.numero_envio || r.numero_guia || r.numero_cotizacion || r.numero_informe || r.numero_oc || ''; }
 
@@ -2413,7 +2432,7 @@
       { titulo: 'Servicio', ancho: 22, get: function (x) { return x.r.equipo ? (x.r.equipo.servicio || '') : ''; } },
       { titulo: 'Serie', ancho: 16, get: function (x) { return x.r.equipo ? (x.r.equipo.serie || '') : ''; } },
       { titulo: 'Técnico', ancho: 24, get: function (x) { return x.r.tecnico || ''; } },
-      { titulo: 'Estado / Resultado', ancho: 18, get: function (x) { return estadoResultado(x.r); } },
+      { titulo: 'Estado / Resultado', ancho: 22, get: function (x) { return estadoResultadoTexto(x.r); } },
       { titulo: 'Empresa', ancho: 22, get: function (x) { return x.r.empresa || ''; } },
       { titulo: 'N° documento', ancho: 16, get: function (x) { return numeroDoc(x.r); } },
       { titulo: 'Observaciones', ancho: 40, get: function (x) { return x.r.observaciones || ''; } },
