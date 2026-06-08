@@ -2650,7 +2650,15 @@
     var rowUrl = el('div', { class: 'gs-row' });
     var inUrl = el('input', { type: 'url', placeholder: 'https://script.google.com/macros/s/…/exec', value: cfg.url || '', 'aria-label': 'URL del App web de Google' });
     var bUrl = el('button', { class: 'btn btn-primary' }, '💾 Guardar URL');
-    bUrl.onclick = function () { cfg.url = inUrl.value.trim(); guardarDB(); gsActualizarChip(); toast(cfg.url ? 'URL guardada.' : 'URL borrada (modo local).', 'ok'); renderConfig(); };
+    bUrl.onclick = function () {
+      var prev = cfg.url; cfg.url = inUrl.value.trim();
+      // Al conectar una URL por primera vez, activa el guardado automático.
+      var activado = false;
+      if (cfg.url && !prev && !cfg.auto) { cfg.auto = true; activado = true; }
+      guardarDB(); gsActualizarChip();
+      toast(cfg.url ? ('URL guardada.' + (activado ? ' Guardado automático activado.' : '')) : 'URL borrada (modo local).', 'ok');
+      renderConfig();
+    };
     rowUrl.appendChild(inUrl); rowUrl.appendChild(bUrl);
     b4.appendChild(rowUrl);
 
