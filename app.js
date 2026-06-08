@@ -477,11 +477,25 @@
     });
     return filas;
   }
-  function gsFilasInventario() {
+  // Filas de inventario; si se pasa "estado", solo los equipos en ese estado.
+  function gsFilasInventario(estado) {
     var filas = [['ID', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Serie', 'Estado', 'Última actualización', 'N° registros']];
     calcInventario().forEach(function (x) {
+      if (estado && x.estado !== estado) return;
       var e = x.e;
       filas.push([e.id || '', e.inventario || '', e.equipo || '', e.servicio || '', e.unidad || '', e.ubicacion || '', e.marca || '', e.modelo || '', e.serie || '', x.estado, gsFechaISO(x.ultima), x.n]);
+    });
+    return filas;
+  }
+  // Filas de la hoja Pendientes (gestión por equipo).
+  function gsFilasPendientes() {
+    var filas = [['Equipo', 'N° Inventario', 'Tipo', 'Descripción', 'Estado', 'Ejecutor', 'Responsable (asegura)', 'Compromiso', 'Última actualización']];
+    (DB.registros.pendiente || []).forEach(function (p) {
+      filas.push([
+        (p.equipo && p.equipo.nombre) || '', (p.equipo && p.equipo.inv) || '', p.tipo || '',
+        p.observaciones || '', p.estado_pendiente || 'Pendiente', p.tecnico || '', p.responsable || '',
+        gsFechaISO(p.fecha_resolucion), gsFechaISO(p._updatedAt)
+      ]);
     });
     return filas;
   }
@@ -492,7 +506,19 @@
     var json = JSON.stringify(DB);
     var comp = tieneLZ();
     var obj = { datos: comp ? window.LZString.compressToUTF16(json) : json, comprimido: comp, rev: Date.now() };
-    if (incluirHojas) { obj.registros = gsFilasRegistros(); obj.inventario = gsFilasInventario(); }
+    if (incluirHojas) {
+      // Hojas legibles (vistas): inventario completo, una por estado, pendientes y registros.
+      obj.hojas = [
+        { nombre: 'Inventario', filas: gsFilasInventario(null) },
+        { nombre: 'Operativos', filas: gsFilasInventario('Operativo') },
+        { nombre: 'No operativos', filas: gsFilasInventario('No operativo') },
+        { nombre: 'En servicio técnico', filas: gsFilasInventario('Servicio técnico') },
+        { nombre: 'Baja', filas: gsFilasInventario('Baja') },
+        { nombre: 'Desconocido', filas: gsFilasInventario('Desconocido') },
+        { nombre: 'Pendientes', filas: gsFilasPendientes() },
+        { nombre: 'Registros', filas: gsFilasRegistros() }
+      ];
+    }
     return JSON.stringify(obj);
   }
   // Empuja la BD a Google Sheets. manual=true muestra avisos Y actualiza las
@@ -607,10 +633,12 @@
       "    var body = JSON.parse(e.postData.contents);",
       "    guardarDatos_(String(body.datos || ''));",
       "    prop_('comp', body.comprimido ? 'si' : 'no');",
+      "    var nreg = 0;",
+      "    if (body.hojas) body.hojas.forEach(function (h) { if (h && h.nombre) { escribirHoja_(h.nombre, h.filas); if (h.nombre === 'Registros') nreg = Math.max(0, (h.filas || []).length - 1); } });",
       "    if (body.registros) escribirHoja_('Registros', body.registros);",
       "    if (body.inventario) escribirHoja_('Inventario', body.inventario);",
       "    prop_('updated', new Date().toISOString());",
-      "    prop_('rows', String(body.registros ? Math.max(0, body.registros.length - 1) : 0));",
+      "    prop_('rows', String(nreg || (body.registros ? Math.max(0, body.registros.length - 1) : 0)));",
       "    out = { ok: true, updated: prop_('updated') };",
       "  } catch (err) { out = { ok: false, error: String(err) }; }",
       "  return responder_(out, '');",
@@ -630,6 +658,7 @@
       "  while (i < s.length) { rows.push([s.substr(i, CHUNK)]); i += CHUNK; }",
       "  if (!rows.length) rows = [['']];",
       "  sh.getRange(1, 1, rows.length, 1).setNumberFormat('@').setValues(rows);",
+      "  try { sh.hideSheet(); } catch (e) {} // hoja de sistema: oculta",
       "}",
       "function leerDatos_() {",
       "  var sh = ss_().getSheetByName(DATOS_TAB); if (!sh) return '';",
@@ -2682,7 +2711,7 @@
     b4.appendChild(rowBtns);
 
     b4.appendChild(el('div', { class: 'hint' }, cfg.url
-      ? 'Se guarda una copia local (este navegador) y se sincroniza con Google Sheets. El guardado automático envía solo el estado (rápido) a la hoja «_gec_datos»; «Guardar ahora» actualiza además las hojas legibles «Registros» e «Inventario».'
+      ? 'Se guarda una copia local (este navegador) y se sincroniza con Google Sheets. El guardado automático envía solo el estado (rápido); «Guardar ahora» actualiza además las hojas legibles: Inventario, una por estado (Operativos, No operativos, En servicio técnico, Baja, Desconocido), Pendientes y Registros. La hoja de sistema «_gec_datos» queda oculta.'
       : 'Sin URL configurada: los datos se guardan solo en este navegador (localStorage). Sigue los pasos de abajo para conectar una Google Sheet.'));
 
     var det = el('details', { class: 'gs-code' });

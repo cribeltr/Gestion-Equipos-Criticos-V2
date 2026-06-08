@@ -32,10 +32,12 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     guardarDatos_(String(body.datos || ''));
     prop_('comp', body.comprimido ? 'si' : 'no');
+    var nreg = 0;
+    if (body.hojas) body.hojas.forEach(function (h) { if (h && h.nombre) { escribirHoja_(h.nombre, h.filas); if (h.nombre === 'Registros') nreg = Math.max(0, (h.filas || []).length - 1); } });
     if (body.registros) escribirHoja_('Registros', body.registros);
     if (body.inventario) escribirHoja_('Inventario', body.inventario);
     prop_('updated', new Date().toISOString());
-    prop_('rows', String(body.registros ? Math.max(0, body.registros.length - 1) : 0));
+    prop_('rows', String(nreg || (body.registros ? Math.max(0, body.registros.length - 1) : 0)));
     out = { ok: true, updated: prop_('updated') };
   } catch (err) { out = { ok: false, error: String(err) }; }
   return responder_(out, '');
@@ -55,6 +57,7 @@ function guardarDatos_(s) {
   while (i < s.length) { rows.push([s.substr(i, CHUNK)]); i += CHUNK; }
   if (!rows.length) rows = [['']];
   sh.getRange(1, 1, rows.length, 1).setNumberFormat('@').setValues(rows);
+  try { sh.hideSheet(); } catch (e) {} // hoja de sistema: oculta
 }
 function leerDatos_() {
   var sh = ss_().getSheetByName(DATOS_TAB); if (!sh) return '';
