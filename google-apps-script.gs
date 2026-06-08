@@ -66,5 +66,7 @@ function escribirHoja_(name, filas) {
   if (!filas || !filas.length) return;
   var n = filas[0].length;
   filas = filas.map(function (r) { r = r.slice(0, n); while (r.length < n) r.push(''); return r; });
-  sh.getRange(1, 1, filas.length, n).setValues(filas);
+  var rng = sh.getRange(1, 1, filas.length, n);
+  rng.setNumberFormat('@'); // texto: las fechas (AAAA-MM-DD) y series se ven tal cual, sin convertirse
+  rng.setValues(filas);
 }

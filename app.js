@@ -461,14 +461,16 @@
     if (span) span.textContent = label; else chip.textContent = '☁️ ' + label;
   }
   // Filas legibles (encabezado + datos) para las hojas Registros e Inventario.
+  function gsFechaISO(x) { return x ? String(x).slice(0, 10) : ''; } // AAAA-MM-DD (ordena cronológicamente)
   function gsFilasRegistros() {
-    var filas = [['Fecha', 'Etapa', 'Equipo', 'N° Inventario', 'Estado / Resultado', 'Ejecutor', 'Empresa', 'N° doc', 'Folio', 'Observaciones']];
+    var filas = [['Fecha', 'Etapa', 'Equipo', 'N° Inventario', 'Resultado', 'Estado del equipo', 'Ejecutor', 'Empresa', 'N° doc', 'Folio', 'Observaciones']];
     ETAPAS.forEach(function (et) {
       (DB.registros[et.id] || []).forEach(function (r) {
+        var resultado = (r._stage === 'mp') ? (r.resultado || '') : (r.estado_pendiente || r.estado || r.resultado || r.estado_final || r.via || '');
         filas.push([
-          fmtFecha(r.fecha) || '', et.nombre,
+          gsFechaISO(r.fecha), et.nombre,
           (r.equipo && r.equipo.nombre) || '', (r.equipo && r.equipo.inv) || '',
-          estadoResultadoTexto(r) || '', r.tecnico || '', r.empresa || '',
+          resultado, r.estado_equipo || '', r.tecnico || '', r.empresa || '',
           numeroDoc(r) || '', r.folio || '', r.observaciones || ''
         ]);
       });
@@ -479,7 +481,7 @@
     var filas = [['ID', 'N° Inventario', 'Equipo', 'Servicio', 'Unidad', 'Ubicación', 'Marca', 'Modelo', 'Serie', 'Estado', 'Última actualización', 'N° registros']];
     calcInventario().forEach(function (x) {
       var e = x.e;
-      filas.push([e.id || '', e.inventario || '', e.equipo || '', e.servicio || '', e.unidad || '', e.ubicacion || '', e.marca || '', e.modelo || '', e.serie || '', x.estado, x.ultima ? fmtFecha(x.ultima) : '', x.n]);
+      filas.push([e.id || '', e.inventario || '', e.equipo || '', e.servicio || '', e.unidad || '', e.ubicacion || '', e.marca || '', e.modelo || '', e.serie || '', x.estado, gsFechaISO(x.ultima), x.n]);
     });
     return filas;
   }
@@ -639,7 +641,9 @@
       "  if (!filas || !filas.length) return;",
       "  var n = filas[0].length;",
       "  filas = filas.map(function (r) { r = r.slice(0, n); while (r.length < n) r.push(''); return r; });",
-      "  sh.getRange(1, 1, filas.length, n).setValues(filas);",
+      "  var rng = sh.getRange(1, 1, filas.length, n);",
+      "  rng.setNumberFormat('@'); // texto: las fechas (AAAA-MM-DD) y series se ven tal cual, sin convertirse",
+      "  rng.setValues(filas);",
       "}"
     ].join('\n');
   }
