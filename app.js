@@ -483,24 +483,24 @@
     });
     return filas;
   }
-  function gsPayload() {
+  // Construye el cuerpo a enviar. incluirHojas=true agrega las filas legibles
+  // (Registros e Inventario); en el guardado automático se omiten para que el
+  // envío sea liviano (solo el estado en «_gec_datos»).
+  function gsPayload(incluirHojas) {
     var json = JSON.stringify(DB);
     var comp = tieneLZ();
-    return JSON.stringify({
-      datos: comp ? window.LZString.compressToUTF16(json) : json,
-      comprimido: comp,
-      registros: gsFilasRegistros(),
-      inventario: gsFilasInventario(),
-      rev: Date.now()
-    });
+    var obj = { datos: comp ? window.LZString.compressToUTF16(json) : json, comprimido: comp, rev: Date.now() };
+    if (incluirHojas) { obj.registros = gsFilasRegistros(); obj.inventario = gsFilasInventario(); }
+    return JSON.stringify(obj);
   }
-  // Empuja la BD a Google Sheets. manual=true muestra avisos.
+  // Empuja la BD a Google Sheets. manual=true muestra avisos Y actualiza las
+  // hojas legibles; el automático (manual=false) solo envía el estado (liviano).
   function gsPush(manual, cb) {
     var cfg = gsCfg();
     if (!cfg.url) { if (manual) toast('Configura primero la URL de Google Sheets (Configuración).', 'err'); cb && cb(false); return; }
     gsActualizarChip('saving');
     var body;
-    try { body = gsPayload(); } catch (e) { gsActualizarChip('err'); if (manual) toast('No se pudo preparar el envío: ' + (e.message || e), 'err'); cb && cb(false); return; }
+    try { body = gsPayload(manual); } catch (e) { gsActualizarChip('err'); if (manual) toast('No se pudo preparar el envío: ' + (e.message || e), 'err'); cb && cb(false); return; }
     var okFinal = function (confirmado) { gsActualizarChip('ok', (confirmado ? 'Guardado ' : 'Enviado ') + horaCorta()); if (manual) toast(confirmado ? 'Datos guardados en Google Sheets.' : 'Datos enviados a Google Sheets (sin confirmación de respuesta).', 'ok'); cb && cb(true); };
     var falla = function (msg) { gsActualizarChip('err', 'Sin guardar'); if (manual) toast('No se pudo guardar en Google Sheets: ' + (msg || 'error') + '.', 'err'); cb && cb(false); };
     // 1) Intento con CORS (respuesta confirmable).
@@ -2670,7 +2670,7 @@
     b4.appendChild(rowBtns);
 
     b4.appendChild(el('div', { class: 'hint' }, cfg.url
-      ? 'Se guarda una copia local (este navegador) y se sincroniza con Google Sheets. La hoja «_gec_datos» guarda el estado exacto; «Registros» e «Inventario» son las hojas legibles.'
+      ? 'Se guarda una copia local (este navegador) y se sincroniza con Google Sheets. El guardado automático envía solo el estado (rápido) a la hoja «_gec_datos»; «Guardar ahora» actualiza además las hojas legibles «Registros» e «Inventario».'
       : 'Sin URL configurada: los datos se guardan solo en este navegador (localStorage). Sigue los pasos de abajo para conectar una Google Sheet.'));
 
     var det = el('details', { class: 'gs-code' });
