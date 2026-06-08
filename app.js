@@ -176,7 +176,7 @@
         { key: 'tecnico', label: 'Ejecutor', tipo: 'tecnico', ancho: 24 },
         { key: 'anio', label: 'Año', tipo: 'text', ancho: 8, derivado: 'anio' },
         { key: 'mes', label: 'Mes', tipo: 'select', opciones: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], ancho: 8, derivado: 'mes' },
-        { key: 'tipo', label: 'Tipo', tipo: 'select', opciones: ['X', 'R', 'RA', 'PM'], ancho: 8, hint: 'X programada · R reprogramada · RA año anterior · PM puesta en marcha' },
+        { key: 'tipo', label: 'Tipo de mantención', tipo: 'select', opciones: [{ value: 'X', label: 'X · Programada' }, { value: 'R', label: 'R · Reprogramada' }, { value: 'RA', label: 'RA · Reprog. año anterior' }, { value: 'PM', label: 'PM · Puesta en marcha' }], ancho: 16, hint: 'X programada · R reprogramada · RA año anterior · PM puesta en marcha' },
         { key: 'resultado', label: 'Resultado', tipo: 'select', opciones: ['Si', 'No', 'Baja', 'NU', 'Pendiente', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'], ancho: 12 },
         { key: 'estado_equipo', label: 'Estado del equipo', tipo: 'select', opciones: ['Operativo', 'No operativo', 'En servicio técnico', 'Baja'], ancho: 16, hint: 'Si lo dejas vacío, se deduce del resultado.' },
         { key: 'observaciones', label: 'Observaciones', tipo: 'textarea', col: 'full', ancho: 40 }
@@ -463,12 +463,12 @@
   // Filas legibles (encabezado + datos) para las hojas Registros e Inventario.
   function gsFechaISO(x) { return x ? String(x).slice(0, 10) : ''; } // AAAA-MM-DD (ordena cronológicamente)
   function gsFilasRegistros() {
-    var filas = [['Fecha', 'Etapa', 'Equipo', 'N° Inventario', 'Resultado', 'Estado del equipo', 'Ejecutor', 'Empresa', 'N° doc', 'Folio', 'Observaciones']];
+    var filas = [['Fecha', 'Etapa', 'Tipo MP', 'Equipo', 'N° Inventario', 'Resultado', 'Estado del equipo', 'Ejecutor', 'Empresa', 'N° doc', 'Folio', 'Observaciones']];
     ETAPAS.forEach(function (et) {
       (DB.registros[et.id] || []).forEach(function (r) {
         var resultado = (r._stage === 'mp') ? (r.resultado || '') : (r.estado_pendiente || r.estado || r.resultado || r.estado_final || r.via || '');
         filas.push([
-          gsFechaISO(r.fecha), et.nombre,
+          gsFechaISO(r.fecha), et.nombre, (r._stage === 'mp' ? mpTipoTitulo(r.tipo) : ''),
           (r.equipo && r.equipo.nombre) || '', (r.equipo && r.equipo.inv) || '',
           resultado, r.estado_equipo || '', r.tecnico || '', r.empresa || '',
           numeroDoc(r) || '', r.folio || '', r.observaciones || ''
@@ -846,7 +846,7 @@
       } else if (campo.tipo === 'select') {
         ctrl = el('select');
         if (!campo.req) ctrl.appendChild(el('option', { value: '' }, '—'));
-        campo.opciones.forEach(function (o) { ctrl.appendChild(el('option', { value: o }, o)); });
+        campo.opciones.forEach(function (o) { var v = (o && typeof o === 'object') ? o.value : o; var l = (o && typeof o === 'object') ? o.label : o; ctrl.appendChild(el('option', { value: v }, l)); });
         var sv = record ? record[campo.key] : campo.def;
         if (sv != null && sv !== '') ctrl.value = sv;
         field.appendChild(ctrl);
@@ -1300,7 +1300,7 @@
       hist.forEach(function (x) {
         var r = x.r, tr = el('tr');
         tr.appendChild(td(fmtFecha(r.fecha) || '—'));
-        tr.appendChild(td(el('span', { class: 'tag-etapa' }, x.etapa.nombre)));
+        tr.appendChild(td(celdaTipoEvento(x)));
         tr.appendChild(td(celdaEstadoResultado(r)));
         tr.appendChild(td(r.tecnico || '—'));
         var obsH = r.observaciones || ''; tr.appendChild(td(obsH.length > 50 ? (obsH.slice(0, 50) + '…') : (obsH || '—')));
@@ -1604,7 +1604,7 @@
         var r = x.r;
         var tr = el('tr');
         tr.appendChild(td(fmtFecha(r.fecha) || '—'));
-        tr.appendChild(td(el('span', { class: 'tag-etapa' }, x.etapa.nombre)));
+        tr.appendChild(td(celdaTipoEvento(x)));
         tr.appendChild(td(celdaEstadoResultado(r)));
         tr.appendChild(td(r.tecnico || '—'));
         tr.appendChild(td(r.empresa || '—'));
@@ -2538,6 +2538,20 @@
     return rows;
   }
   function estadoResultado(r) { return r.estado_pendiente || r.estado || r.estado_equipo || r.resultado || r.estado_final || r.via || ''; }
+  // Tipo de mantención preventiva: X/R/RA/PM con su descripción.
+  var MP_TIPO_DESC = { X: 'Programada', R: 'Reprogramada', RA: 'Reprogramada (año anterior)', PM: 'Puesta en marcha' };
+  function mpTipoTitulo(code) { return code ? (code + (MP_TIPO_DESC[code] ? (' · ' + MP_TIPO_DESC[code]) : '')) : ''; }
+  // Celda «Tipo» para tablas de historial: etapa + (si es MP) su tipo X/R/RA/PM.
+  function celdaTipoEvento(x) {
+    if (x.etapa.id === 'mp' && x.r.tipo) {
+      return el('span', {}, [
+        el('span', { class: 'tag-etapa' }, x.etapa.nombre),
+        document.createTextNode(' '),
+        el('span', { class: 'tipo-mp', title: mpTipoTitulo(x.r.tipo) }, x.r.tipo)
+      ]);
+    }
+    return el('span', { class: 'tag-etapa' }, x.etapa.nombre);
+  }
   function estadoResultadoKey(r) {
     if (r.estado_pendiente) return 'estado_pendiente';
     if (r.estado) return 'estado'; if (r.estado_equipo) return 'estado_equipo'; if (r.resultado) return 'resultado';

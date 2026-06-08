@@ -373,6 +373,18 @@ table.data td.acciones { white-space: nowrap; }
   background: var(--azul-claro);
   color: var(--azul-osc);
 }
+/* Tipo de mantención preventiva (X/R/RA/PM) */
+.tipo-mp {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fff;
+  color: var(--azul-osc);
+  border: 1px solid var(--azul);
+  white-space: nowrap;
+}
 
 /* ---------- Config ---------- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
