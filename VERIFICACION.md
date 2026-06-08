@@ -1,0 +1,303 @@
+# Informe de verificación y mejoras
+
+Revisión técnica de la aplicación **Gestión de Equipos en Servicio Técnico**
+(HTML + JavaScript, sin dependencias de build). Se auditó el código desde tres
+perspectivas: **programación** (corrección y robustez), **UX/UI** (usabilidad y
+accesibilidad) y **gestión** (valor para el seguimiento del proceso).
+
+## 1. Resultado general
+
+La aplicación está **operativa y bien construida**. Arranca sin errores, renderiza
+las 17 secciones del menú, lista los 965 equipos del inventario, registra y
+persiste datos en `localStorage` y exporta archivos `.xlsx` válidos.
+
+## 2. Pruebas ejecutadas
+
+| Prueba | Método | Resultado |
+|--------|--------|-----------|
+| Sintaxis de todos los `.js` | `node --check` | ✅ Sin errores |
+| Carga de datos del inventario | Conteo y claves de `window.EQUIPOS` | ✅ 965 equipos, 15 campos |
+| Arranque y render de la app | jsdom (DOM simulado) | ✅ 0 errores en runtime |
+| Alta de registro + persistencia | jsdom (flujo de UI) | ✅ Guarda en `localStorage` |
+| Escritor `.xlsx` propio | Generar y validar con `unzip -t` + parser XML | ✅ ZIP y XML correctos |
+| Transformación de Programación MP | Libro sintético Gantt + Registro | ✅ Eventos y estados correctos |
+| Accesibilidad y nuevas funciones | 15 aserciones automatizadas (jsdom) | ✅ 15/15 |
+
+> Las pruebas de DOM se realizaron con `jsdom`; el escritor `.xlsx` se validó
+> descomprimiendo el archivo generado y comprobando que cada XML está bien formado.
+
+## 3. Hallazgos corregidos
+
+### Programación
+- **Pérdida de datos al editar (bug).** Al editar los campos de un registro, el
+  objeto se reconstruía desde el formulario y se **perdían sus tareas y su
+  bitácora de actualizaciones**. Ahora esos subdatos se conservan.
+- **Guarda defensiva al actualizar.** Si el registro a editar no se encontraba en
+  el arreglo, se escribía en el índice `-1`. Se añadió validación.
+- **Restaurar respaldo no refrescaba el inventario.** Tras importar un JSON con
+  `equiposOverrides`, la caché de equipos quedaba obsoleta. Se invalida la caché y
+  se normaliza la estructura al restaurar.
+- **Fuga de *event listeners*.** Cada formulario con selector de equipo añadía un
+  listener global de clic que nunca se removía. Ahora se añade solo mientras la
+  lista está abierta y se quita al cerrarla.
+- **Error de CSS.** Declaración `background` duplicada en `.btn-danger:hover`.
+
+### UX / UI — Accesibilidad
+- **Navegación por teclado en el menú lateral** (`tabindex`, Enter/Espacio,
+  `aria-current="page"` en la sección activa).
+- **Buscador de equipos accesible (combobox):** navegación con flechas, selección
+  con Enter, cierre con Escape, roles ARIA (`combobox`/`listbox`/`option`) y
+  `aria-activedescendant`. (El CSS ya contemplaba el resaltado `.hl`.)
+- **Modal accesible:** `role="dialog"`, `aria-modal`, foco inicial dentro del
+  diálogo, **trampa de foco** (Tab/Shift+Tab) y **retorno del foco** al cerrar.
+- **Etiquetas accesibles** en botones de solo icono (eliminar, gestionar).
+- **Avisos (toasts)** anunciados a lectores de pantalla (`aria-live="polite"`).
+- **Anillos de foco visibles** (`:focus-visible`) y **enlace «Saltar al
+  contenido»** para usuarios de teclado.
+- **Respeto a `prefers-reduced-motion`** y `theme-color` para móviles.
+
+### Gestión
+- **KPI de antigüedad / SLA en el panel:** nueva métrica «Antigüedad máx. (días)»
+  y tarjeta **«Solicitudes vigentes más antiguas»** con semáforo
+  (verde ≤ 15 días · ámbar ≤ 45 · rojo > 45) para priorizar el trabajo abierto.
+- **Estilos de impresión** (`@media print`) para imprimir/PDF de reportes y fichas
+  sin los elementos de navegación.
+
+## 4. Observaciones sobre los datos (no se modificaron)
+
+El listado `equipos.js` se genera a partir del Excel original; se reporta solo
+como nota de calidad de datos:
+- **1** número de inventario duplicado.
+- **70** equipos sin número de inventario.
+
+Conviene depurarlos en la fuente (`Listado_de_equipos_Criticos.xlsx`) antes de
+regenerar `equipos.js`.
+
+## 5. Funciones solicitadas (segunda iteración)
+
+1. **Tablero de estado en el panel izquierdo.** Nuevo grupo **«Estado de equipos»**
+   con vistas **En servicio técnico**, **Operativos**, **No operativos**,
+   **Pendientes** y **Desconocido**, cada una con su contador en vivo. Cada vista
+   lista solo los equipos en ese estado; **al cambiar de estado, un equipo
+   desaparece automáticamente de la vista** (el estado se recalcula desde el
+   último evento). Las tarjetas del inventario y el desplegable de estado quedan
+   sincronizados con estas vistas.
+2. **Pendientes gestionables** desde el propio panel: el ítem «Pendientes» abre la
+   vista de gestión (crear, cambiar estado en línea, tareas, bitácora y eliminar).
+3. **Validación de fecha en Mantención Preventiva.** Al guardar una MP, si la
+   **fecha no corresponde al mes programado** (o el año no coincide), la app **lo
+   indica** y pide confirmación antes de guardar.
+
+Pruebas automatizadas de esta iteración: **16/16** (incluye el caso de que un
+equipo sale de «En servicio técnico» y pasa a «Operativos» al cerrar el ciclo, y
+el aviso de desajuste fecha/mes en MP).
+
+## 6. Almacenamiento: cuota de localStorage (tercera iteración)
+
+**Síntoma reportado:** al crear un pendiente aparecía «Failed to execute 'setItem'
+on 'Storage': … exceeded the quota». La base de datos superaba el límite de
+`localStorage` (~5 MB), normalmente tras importar la Programación MP (miles de
+eventos, cada uno con los datos del equipo).
+
+**Solución:**
+- **Compresión** de la base de datos antes de guardar (`lib-lzstring.js`,
+  LZ-string, MIT). En una importación completa (965 equipos × 12 meses = 11.580
+  eventos) el tamaño pasa de **~11 MB a ~0,25 MB (−97,7 %)**, con round-trip
+  exacto (incluye acentos y emoji). Compatible con datos antiguos sin comprimir.
+- **Manejo del error de cuota:** si aun así se llena, se muestra un aviso claro y
+  accionable en vez de un error técnico, sin romper la app.
+- **Herramientas en Configuración:** uso aproximado de almacenamiento y botón
+  **«Vaciar mantenciones preventivas»** (reimportables) para liberar espacio.
+- Se corrigió además un error de **orden de inicialización** (la marca de datos
+  comprimidos se definía con `var` después de `cargarDB()`); ahora es una función
+  *hoisted*, de modo que la primera carga descomprime correctamente.
+
+Pruebas automatizadas de esta iteración: **7/7** (guardado comprimido y
+relectura, compatibilidad con datos antiguos, y aviso correcto al exceder la
+cuota). Regresión global: **15/15 + 16/16 + 7/7**.
+
+## 7. Búsqueda de series con ceros a la izquierda (cuarta iteración)
+
+**Síntoma reportado:** la serie `00298` del equipo `2-120997` no aparecía al
+buscar en el inventario. **Causa:** esa serie quedó guardada como `298` —el Excel
+de origen la tomó como número y eliminó los ceros iniciales (afecta a varias
+series numéricas: ~310 puramente numéricas, 115 de ≤ 5 dígitos).
+
+**Solución:** la búsqueda (inventario y selector de equipos) ahora es **tolerante
+a los ceros a la izquierda**: normaliza los números antes de comparar, de modo
+que `00298` encuentra `298` y viceversa, sin afectar el resto de las búsquedas.
+Recomendación de fondo: corregir las series en el Excel de origen (formato
+**texto**) y regenerar `equipos.js`.
+
+Pruebas automatizadas de esta iteración: **6/6**.
+
+## 8. Exportación por vista y ficha más ancha (quinta iteración)
+
+- **Verificación del Excel:** se comparó un respaldo real con su exportación y
+  los datos coinciden **exactamente** (2.333 registros, estados 687/189/16/74,
+  los 3 registros de `2-120997`, sin caracteres que dañen el archivo). No había
+  pérdida de datos.
+- **Exportación contextual:** el botón **«Exportar a Excel»** ahora exporta **la
+  vista actual**: en Inventario o en un estado (Operativos, No operativos, En
+  servicio técnico, Desconocido) exporta solo los equipos visibles (respeta la
+  búsqueda y el filtro); en una etapa, esa etapa; en «Todos los registros», la
+  bitácora filtrada; y en el Resumen, todo. El botón cambia su texto según la
+  vista. La exportación completa sigue disponible (Resumen y Configuración).
+  Al exportar el inventario o un estado, el libro incluye además una segunda
+  hoja **«Registros»** con todos los registros (mantenciones, solicitudes…) de
+  los equipos visibles.
+- **Ficha del equipo (modal)** ampliada (máx. 1000 → 1600 px) para aprovechar la
+  pantalla.
+
+Pruebas automatizadas de esta iteración: **13/13** (exportación contextual con
+datos reales).
+
+## 9. Cómo reproducir las pruebas
+
+No se requieren dependencias para usar la app (basta abrir `index.html`). Para
+las pruebas automatizadas de esta auditoría se usó Node y `jsdom`:
+
+```bash
+node --check app.js eventos_mp.js xlsx.js     # sintaxis
+# pruebas de DOM/funcionalidad con jsdom (ver el informe del PR)
+```
+
+## 9. Triple Foco (productividad de pendientes)
+
+Gestión de pendientes combinando tres métodos en una vista **🎯 Triple Foco**:
+- **Matriz de Eisenhower:** clasifica cada pendiente en un cuadrante (Hazlo ya /
+  Planifícalo / Delégalo / Elimínalo) por urgencia e importancia.
+- **Método Ivy Lee:** «Foco de hoy» con hasta **6 tareas** ordenadas por
+  prioridad (subir/bajar), para trabajar de arriba abajo, una a la vez.
+- **Cómete el Sapo (Brian Tracy):** la tarea **#1** del foco es el «sapo» 🐸,
+  destacada para hacerla primero.
+
+El estado de cada pendiente (No iniciado/En proceso/Resuelto) se cambia en línea;
+al resolver, sale del foco. Acceso desde el menú y desde la vista Pendientes.
+
+Pruebas automatizadas de esta iteración: **13/13** (crear, clasificar, armar el
+foco, sapo, badge y reordenar/quitar).
+
+## 10. Mejoras a partir de una grabación de uso real
+
+Se analizó una **grabación de uso** real (telemetría: vistas, clics y tiempos) junto
+con un respaldo y dos exportaciones a Excel. Hallazgos y correcciones:
+
+- **Falso «guardado con éxito» cuando el almacenamiento estaba lleno.** La grabación
+  mostró 7 errores «Almacenamiento local lleno» y, a la vez, un aviso de éxito al
+  importar la Programación MP. **Corregido:** todos los flujos de guardado (crear/editar
+  registro, crear/editar pendiente, importar MP) ahora **comprueban si realmente se
+  guardó** y solo entonces muestran el aviso de éxito; si falló, lo dicen con claridad.
+- **Recuperación automática de cuota.** Si `localStorage` se llena, la app **libera
+  espacio no esencial** (la grabación de uso y claves de versiones antiguas) y
+  **reintenta** guardar una vez. El aviso de cuota **ya no se repite** en cada intento
+  (se avisa una sola vez hasta que vuelve a guardarse bien).
+- **Registro de seguimiento más rápido.** La grabación mostró que registrar un
+  seguimiento con `prompt()` tardaba ~42 s y no permitía pegar ni editar cómodamente.
+  **Sustituido por un modal** con área de texto, **frases rápidas** de un clic
+  («Llamé al técnico…», «Reprogramado», «A la espera de repuesto…») y **cambio de
+  estado en el mismo paso**; **Ctrl/Cmd+Enter** guarda.
+- **Memoria de búsqueda en el inventario.** El usuario repitió la misma búsqueda de
+  inventario varias veces al ir y volver. Ahora el inventario y las vistas de estado
+  **recuerdan el texto buscado** durante la sesión.
+
+> Sobre la cuota: se verificó que la **compresión funciona** (un respaldo real de
+> 1,29 MB queda en **0,18 MB**), de modo que la base cabe de sobra; el error de cuota
+> del usuario fue ambiental (datos acumulados o límite de `file://`). Las mejoras hacen
+> que, si vuelve a ocurrir, la app **se recupere y nunca informe un éxito falso**.
+
+Pruebas automatizadas de esta iteración: **14/14** de cuota (incluye recuperación
+liberando espacio y no repetir el aviso) y **20/20** del flujo de seguimiento por
+modal. Regresión global de las suites vigentes: **en verde**.
+
+## 11. Rediseño centrado en el equipo (Buscar equipo)
+
+A partir del uso real (la importación de la Programación MP «no mostraba» las
+mantenciones y había que ir de ventana en ventana), se rediseñó el flujo:
+
+- **Diagnóstico de la importación:** se reprodujo la importación con el archivo real
+  (`PMP_2026` + `Registro_MP-2026`). El transformador extrae **966 equipos y 2.330
+  mantenciones** y **persisten tras recargar** (verificado con un round-trip en jsdom).
+  El mensaje «0 nuevas / 2.329 actualizadas» que vio el usuario significaba que esas
+  mantenciones **ya estaban cargadas** de una importación previa: no se perdió nada,
+  pero la app no las hacía visibles. El aviso ahora muestra **totales** («N equipos y
+  M mantenciones en el sistema»), no solo lo nuevo.
+- **Se eliminó la vista «Resumen».** El inicio ahora es **🔎 Buscar equipo**.
+- **Espacio de trabajo del equipo (en la misma pantalla):** se busca el equipo por
+  inventario, serie, nombre, marca o servicio; al elegirlo se abre, **sin ventanas**,
+  su espacio de trabajo con: datos, **registrar/editar mantención preventiva**,
+  **agregar/editar pendientes**, **registrar seguimiento**, cambiar estado e historial
+  completo. Los formularios van **incrustados** y con el **equipo fijado** (no hay que
+  re-seleccionarlo). El clic en una fila del **Inventario** también abre este espacio.
+- **Seguimiento:** se quitaron las «frases rápidas» (el área de texto basta).
+- Se unificó el guardado de registros en un único helper (`persistirRegistro`), de modo
+  que crear/editar desde el espacio de trabajo o desde las etapas conserva tareas,
+  bitácora y clasificación, y nunca duplica al editar.
+
+Pruebas automatizadas de esta iteración: **24/24** del nuevo flujo Buscar + espacio de
+trabajo (búsqueda, abrir, registrar MP en línea, agregar pendiente, editar sin
+duplicar, volver, y entrada desde Inventario), **8/8** del round-trip de importación
+real, y suites de regresión actualizadas (a11y/edición, series con ceros, export
+contextual). Regresión global: **19 suites en verde**.
+
+### 11.1 Ajustes de la misma iteración
+- **Encabezados de tabla que se «amontonaban».** Al ensanchar la tabla (barra lateral
+  plegada) los títulos se partían a media palabra («N° CARPET A», «REGIST ROS») por un
+  `word-break: break-word` en las celdas. Ahora los **encabezados envuelven solo entre
+  palabras** (`white-space: normal; word-break: normal; overflow-wrap: normal`), sin
+  cortes a media palabra; las celdas conservan el quiebre de tokens largos (series).
+- **Borrar registros dejaba 966 equipos en «Desconocido».** «Borrar todos los registros»
+  vaciaba los eventos pero no el inventario importado (`equiposOverrides`), dejando los
+  equipos sin eventos. Ahora hay alcances claros en Configuración: **«Vaciar inventario
+  de equipos»** (solo el inventario, reimportable), **«Borrar todo (reiniciar)»**
+  (registros + inventario) y la ya existente **«Vaciar mantenciones preventivas»**.
+
+Pruebas de estos ajustes: **6/6** de borrado por alcance. Regresión global: **20 suites
+en verde**.
+
+### 11.2 Re-importar ya no pierde el trabajo manual
+
+**Síntoma reportado:** se registraron mantenciones preventivas con el **técnico
+(ejecutor)** y, al **volver a subir la Programación MP**, el detalle se perdía.
+
+**Causa:** la importación solo respetaba las MP marcadas `_origen === 'manual'`. Una MP
+con datos del usuario pero con `_origen === 'import'` (versiones antiguas, o ciertos
+flujos) caía en la rama de actualización, que **reescribía el resultado** con el del
+`.xlsm` (a menudo «Pendiente»): el trabajo parecía perderse.
+
+**Solución (red de seguridad):** se considera "tocada a mano" cualquier MP con
+**ejecutor, observaciones, estado del equipo, tareas o bitácora**, además de las
+marcadas manual. Esas mantenciones se **conservan completas** al re-importar (incluido
+el resultado) y quedan marcadas como manual para protegerlas en el futuro. El aviso de
+importación indica cuántas mantenciones se **conservaron**.
+
+Pruebas: **9/9** (`smoke_reimport`) — preserva manual y manual-con-`_origen=import`, no
+duplica, y actualiza con normalidad las MP sin datos del usuario.
+
+## 12. Sin grabación + guardado en Google Sheets (octava iteración)
+
+- **Se eliminó el botón «Grabar»** (telemetría de uso) y todo su código.
+- **Guardado en Google Sheets** (opcional, en Configuración → «☁️ Guardar en
+  Google Sheets»). La copia local (localStorage) se mantiene como caché y Google
+  Sheets queda como respaldo central, accesible desde cualquier equipo:
+  - Se conecta mediante un **App web de Apps Script** (código incluido en la app y
+    en `google-apps-script.gs`). No requiere claves ni librerías: el App web se
+    ejecuta con la cuenta del usuario. Funciona desde `file://`.
+  - **Guardar:** `POST` (intenta CORS; si el navegador lo bloquea por el origen
+    `file://`, reintenta en modo `no-cors`). **Cargar/Probar:** JSONP (etiqueta
+    `<script>`), que evita los problemas de CORS desde `file://`.
+  - La hoja `_gec_datos` guarda el **estado exacto** (para volver a cargarlo);
+    `Registros` e `Inventario` son las **hojas legibles**.
+  - **Guardado automático** opcional (con anti-rebote) al cambiar datos, además de
+    «Guardar ahora», «Cargar desde Google Sheets» y «Probar conexión». Un chip en
+    la barra superior muestra el estado (Local / Guardando… / Guardado / Error).
+  - Al **cargar**, se conserva la URL de conexión de este equipo.
+
+Pruebas de esta iteración: **11/11** (`smoke_gs`): sin botón Grabar, tarjeta y
+código visibles, guardar URL, activar automático, `POST` con `datos` + filas
+legibles y `Content-Type: text/plain` (sin *preflight*), y carga vía JSONP que
+reemplaza la base conservando la conexión. Regresión: suites vigentes en verde.
+
+> Nota: Google Sheets es un servicio externo. La sincronización envía los datos a
+> la hoja del propio usuario (configuración explícita). La conexión se hace con un
+> App web publicado por el usuario; la app no incluye credenciales.
